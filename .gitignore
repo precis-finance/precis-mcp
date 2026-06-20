@@ -8,6 +8,9 @@
 # Environment + secrets (runtime only, never committed)
 .env
 .env.*
+# …but the committed template is the documented env contract (operators are
+# told to copy deploy/.env.example) — re-include it past the .env.* ignore.
+!.env.example
 secrets/
 
 # Python
