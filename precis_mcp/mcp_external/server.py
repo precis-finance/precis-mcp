@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = "precis"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.1.1"
 
 # Synthetic, MCP-only tool whose *result* is the orientation block. The MCP
 # `instructions` field (initialize) is dropped by claude.ai and only partly read

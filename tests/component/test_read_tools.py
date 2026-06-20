@@ -260,25 +260,26 @@ def test_list_kpis_base_metric_has_dimensions(tools):
     # Find a known base metric
     revenue = next(e for e in result if e["name"] == "revenue")
     assert revenue["domain"] == "pnl"
-    assert "available_dimensions" in revenue
-    assert "cost_centre" in revenue["available_dimensions"]
+    assert "dimension_keys" in revenue
+    assert "cost_centre" in revenue["dimension_keys"]
 
 
 def test_list_kpis_timesheets_metric_has_project_dimension(tools):
     result = tools["list_kpis"]()
     hours = next(e for e in result if e["name"] == "hours_billable")
     assert hours["domain"] == "timesheets"
-    assert "project" in hours["available_dimensions"]
+    assert "project" in hours["dimension_keys"]
 
 
 def test_list_kpis_federated_metric_marks_axis_only_dimensions(tools):
     result = tools["list_kpis"]()
     metric = next(e for e in result if e["name"] == "federated_hours_worked")
     assert metric["domain"] == "worklog_federated"
-    assert "work_date" in metric["available_dimensions"]
+    # Inline axes are breakdown-only — present in axis_only, absent from the
+    # unified dimension_keys (which are valid in both filters and dimensions).
     assert "work_date" in metric["axis_only_dimensions"]
-    assert "work_date" not in metric["filter_keys"]
-    assert "cost_centre" in metric["filter_keys"]
+    assert "work_date" not in metric["dimension_keys"]
+    assert "cost_centre" in metric["dimension_keys"]
 
 
 def test_list_kpis_derived_metric_resolves_domain(tools):
@@ -287,7 +288,7 @@ def test_list_kpis_derived_metric_resolves_domain(tools):
     assert gm["type"] == "derived"
     # gross_margin is derived from revenue (pnl domain)
     assert gm["domain"] == "pnl"
-    assert "available_dimensions" in gm
+    assert "dimension_keys" in gm
 
 
 def test_list_inspection_sources_returns_enabled_domains(tools):

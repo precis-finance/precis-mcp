@@ -622,7 +622,7 @@ def resolve(
                         _add_parents(parent_key, visited)
 
             for cd in domain_cat.dimensions:
-                _add_parents(cd.source, set())
+                _add_parents(cd.key, set())
             for dim_name in dimensions:
                 if dim_name not in valid_dim_keys:
                     available = [

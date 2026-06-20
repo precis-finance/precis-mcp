@@ -143,7 +143,25 @@ def build_ibis_query(
 
     aggregations = [_metric_aggregation(table, metric) for metric in metrics]
     if dimensions:
-        return table.group_by([table[dim] for dim in dimensions]).aggregate(aggregations)
+        # Group by the physical view column, naming the output back to the
+        # catalogue dimension name so the row reader keys on the catalogue name.
+        # The engine cannot join master data across backends, so a derived axis
+        # is only groupable here if the foreign view denormalises its column.
+        dim_to_col = {cd.key: cd.source for cd in domain.dimensions if cd.source}
+        available = set(table.columns)
+        group_keys = []
+        for dim in dimensions:
+            col = dim_to_col.get(dim, dim)
+            if col not in available:
+                raise IbisRetrieverError(
+                    f"Dimension {dim!r} is not groupable on federated domain "
+                    f"{data_query.domain!r}: column {col!r} is not present on the "
+                    f"foreign view {domain.source_view!r}. Federated reads cannot "
+                    "join master data across backends — denormalise the column "
+                    "onto the foreign view to enable this breakdown."
+                )
+            group_keys.append(table[col].name(dim))
+        return table.group_by(group_keys).aggregate(aggregations)
     return table.aggregate(aggregations)
 
 

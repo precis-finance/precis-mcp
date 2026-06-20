@@ -191,12 +191,13 @@ dimensions:                     # which columns of the view you may slice by
   - { key: period,      label: Period,       source: period }
 ```
 
-`key:` is the **view column** — the name clients group by (`dimensions:
-["cost_centre"]`); `source:` names the **master dimension** the engine resolves
-filters through (`filters: {"cost_centre": …}`). They're equal here only because
-the view column is named like the master — they diverge when the column is a raw
-key (`key: cost_centre_id, source: cost_centre`). `key` must be a real column in
-`v_pnl`; `source` must be a dimension defined in the registry below.
+`key:` is the **catalogue dimension name** — the single name clients use in both
+`dimensions: ["cost_centre"]` and `filters: {"cost_centre": …}`; `source:` names
+the **physical view column** the engine groups by and filters against. They're
+equal here only because the view column is named like the dimension — they
+diverge when the column is a raw key (`key: cost_centre, source: cost_centre_id`).
+`key` must be a dimension defined in the registry below; `source` must be a real
+column in `v_pnl`.
 
 ### A base metric
 

@@ -126,15 +126,16 @@ def _resolve_master_dimension(
 ) -> catalogue_module.Dimension | None:
     """Resolve a dimension name to its master Dimension definition.
 
-    Tries direct lookup in ``catalogue.dimensions`` first, then searches
-    CubeDimensions across all domains for a matching key.
+    A CubeDimension's ``key`` is the catalogue dimension name, so a native
+    binding resolves through the direct lookup; the CubeDimension scan only
+    matches inline axes, which have no master dimension and resolve to None.
     """
     if dim_name in cat.dimensions:
         return cat.dimensions[dim_name]
     for domain in cat.domains.values():
         for cd in domain.dimensions:
             if cd.key == dim_name:
-                return cat.dimensions.get(cd.source)
+                return cat.dimensions.get(cd.key)
     return None
 
 

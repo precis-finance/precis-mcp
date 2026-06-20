@@ -3,12 +3,12 @@
 -- Column names in landing strip the `_eur` suffix; renamed back at view
 -- boundary for downstream catalogue compatibility.
 
+-- Hierarchy parents (department/division off cost_centre, grade off employee)
+-- are resolved by the engine via a leaf-dimension join at query time, so they
+-- are not denormalised here. Period parents (quarter/fiscal_year) stay.
 SELECT
     p.employee_id    AS employee,
     p.cost_centre AS cost_centre,
-    coalesce(cc.department, '') AS department,
-    coalesce(cc.division, '')   AS division,
-    coalesce(de.grade, '')      AS grade,
     formatDateTime(p.pay_date, '%Y-%m') AS period,
     coalesce(pd.quarter, '')     AS quarter,
     coalesce(pd.fiscal_year, '') AS fiscal_year,
@@ -18,9 +18,5 @@ SELECT
     p.bonus                    AS bonus_eur,
     p.total_cost               AS total_cost_eur
 FROM live.fact_payroll p
-LEFT JOIN live.dim_cost_centre cc
-    ON p.cost_centre = cc.cost_centre
-LEFT JOIN live.dim_employee de
-    ON p.employee_id = de.employee_id
 LEFT JOIN live.dim_period pd
     ON formatDateTime(p.pay_date, '%Y-%m') = pd.period

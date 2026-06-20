@@ -700,7 +700,8 @@ class TestCubeDimensionMapping:
     def test_cube_dimension_references_master(self):
         cat = load_catalogue(str(CATALOGUE_DIR))
         cd = cat.domains["pnl"].dimensions[0]
-        assert cd.source in cat.dimensions
+        # ``key`` is the catalogue dimension name; ``source`` is the view column.
+        assert cd.key in cat.dimensions
 
     def test_inline_federated_cube_dimension_loads(self, tmp_path):
         write_yml(tmp_path, "domain.yml", """
@@ -729,7 +730,8 @@ class TestCubeDimensionMapping:
 
         cd = cat.domains["fed"].dimensions[0]
         assert cd.key == "supplier_id"
-        assert cd.source == ""
+        # Inline source defaults to the key (column == axis name) when omitted.
+        assert cd.source == "supplier_id"
         assert cd.source_inline is True
         assert cd.filterable is False
 
@@ -990,14 +992,14 @@ class TestDimensionValidation:
         assert dim.ragged_source.type == "provided"
         assert dim.ragged_source.table == "semantic.geo_rollup"
 
-    def test_cube_dimension_unknown_source_raises(self, tmp_path):
+    def test_cube_dimension_unknown_key_raises(self, tmp_path):
         write_yml(tmp_path, "domain.yml", """
             domain: test
             source_view: semantic.v_test
             dimensions:
-              - key: some_col
+              - key: nonexistent_dimension
                 label: Some
-                source: nonexistent_dimension
+                source: some_col
             metrics:
               - key: revenue
                 label: Revenue
@@ -1008,7 +1010,7 @@ class TestDimensionValidation:
                 format: currency
                 fs_group: Revenue
         """)
-        with pytest.raises(CatalogueError, match="unknown master dimension"):
+        with pytest.raises(CatalogueError, match="not a known catalogue dimension"):
             load_catalogue(str(tmp_path))
 
     def test_display_attribute_references_unknown_raises(self, tmp_path):

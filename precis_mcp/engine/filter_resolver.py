@@ -172,8 +172,9 @@ def _map_to_view_column(
 ) -> str:
     """Find the source-view column name for a dimension in a given domain.
 
-    For leaf dimensions: looks up the CubeDimension whose ``source``
-    matches ``dim.key`` in the specified domain.
+    For leaf dimensions: looks up the CubeDimension whose ``key``
+    matches ``dim.key`` in the specified domain and returns its ``source``
+    (the physical view column).
     For derived dimensions: resolves to the leaf dimension's view column.
     For ragged dimensions: resolves to the leaf dimension's view column.
     """
@@ -192,8 +193,8 @@ def _map_to_view_column(
     domain_cat = catalogue.domains.get(domain)
     if domain_cat:
         for cd in domain_cat.dimensions:
-            if cd.source == lookup_key:
-                return cd.key
+            if cd.key == lookup_key:
+                return cd.source
 
     # Fallback: use the leaf dimension's key_column
     leaf_dim = catalogue.dimensions.get(lookup_key)

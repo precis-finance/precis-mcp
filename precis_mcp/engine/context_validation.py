@@ -192,15 +192,17 @@ def _get_valid_filter_keys_for_domains(
     """
     valid_keys: set[str] = set()
 
-    # Collect which leaf master dimensions are bound to these domains
+    # Collect which catalogue dimensions are bound to these domains. Inline
+    # axes have no master data and are not filterable, so they are excluded.
     bound_leaf_keys: set[str] = set()
     for domain_name in domains:
         domain_cat = catalogue.domains.get(domain_name)
         if not domain_cat:
             continue
         for cd in domain_cat.dimensions:
-            if cd.source:
-                bound_leaf_keys.add(cd.source)
+            if cd.source_inline:
+                continue
+            bound_leaf_keys.add(cd.key)
 
     # Walk parent chains to collect all reachable dimensions
     def _walk_parents(dim_key: str, visited: set[str]) -> None:
@@ -484,8 +486,8 @@ def _get_valid_dimension_keys_for_domains(
             continue
         for cd in domain_cat.dimensions:
             valid_keys.add(cd.key)
-            if cd.source:
-                bound_leaf_keys.add(cd.source)
+            if not cd.source_inline:
+                bound_leaf_keys.add(cd.key)
 
     # Walk parent chains: derived dimensions whose leaf is bound are valid
     def _walk_parents(dim_key: str, visited: set[str]) -> None:

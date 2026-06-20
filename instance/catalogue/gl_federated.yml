@@ -36,9 +36,9 @@ dimensions:
   - key: cost_centre
     label: "Cost centre"
     source: cost_centre
-  - key: account_code
+  - key: account
     label: Account
-    source: account
+    source: account_code
   - key: period
     label: Period
     source: period

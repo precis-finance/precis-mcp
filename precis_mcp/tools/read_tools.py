@@ -604,15 +604,16 @@ def register_read_tools(mcp: FastMCP, ref: "CatalogueRef"):
                 _get_valid_filter_keys_for_domains,
             )
 
-            available = [cd.key for cd in domain_cat.dimensions]
+            # One vocabulary: a catalogue dimension name is valid in both
+            # ``filters`` and ``dimensions``. Inline axes are the only
+            # breakdown-only exception (no master data, cannot be filtered).
             axis_only = [
                 cd.key
                 for cd in domain_cat.dimensions
                 if cd.source_inline and not cd.filterable
             ]
             return {
-                "available_dimensions": available,
-                "filter_keys": sorted(
+                "dimension_keys": sorted(
                     _get_valid_filter_keys_for_domains({domain_name}, ref.current)
                 ),
                 "axis_only_dimensions": axis_only,
@@ -849,7 +850,8 @@ def register_read_tools(mcp: FastMCP, ref: "CatalogueRef"):
             period_end: Range end (YYYY-MM). Defaults from report context.
             filters: Dimension filters. Defaults from report context.
                 Pass {} to explicitly clear all filters.
-            dimensions: Optional dimension columns to break by.
+            dimensions: Optional dimension keys to break by — the same
+                catalogue dimension names used in ``filters``.
             scale: Currency scaling power. 0=units (default), 3=thousands,
                 6=millions, 9=billions. Defaults from report context.
             decimals: Decimal places. Defaults from report context.
@@ -1114,7 +1116,8 @@ def register_read_tools(mcp: FastMCP, ref: "CatalogueRef"):
             period_end: Range end (YYYY-MM). Defaults from report context.
             filters: Dimension filters. Defaults from report context.
                 Pass {} to explicitly clear all filters.
-            dimensions: Dimension columns for row breakdown.
+            dimensions: Dimension keys for row breakdown — the same catalogue
+                dimension names used in ``filters``.
             scale: Currency scaling power. 0=units (default), 3=thousands,
                 6=millions, 9=billions. Defaults from report context.
             decimals: Decimal places. Defaults from report context.

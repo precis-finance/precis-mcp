@@ -6,8 +6,8 @@ inspect_columns:
   - scenario
   - period
   - cost_centre
-  - employee
-  - project
+  - employee_id
+  - project_id
   - hours_worked
   - hours_billable
   - hours_non_billable
@@ -19,11 +19,11 @@ dimensions:
 
   - key: employee
     label: Employee
-    source: employee
+    source: employee_id
 
   - key: project
     label: Project
-    source: project
+    source: project_id
   - key: period
     label: Period
     source: period

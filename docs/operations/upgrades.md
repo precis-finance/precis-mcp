@@ -52,6 +52,24 @@ MCP_DEV_KEY=$MCP_DEV_KEY \
 Re-run the provisioner (quickstart step 2) only if the changelog says the
 sync touches `instance/` shapes.
 
+## Pinned-release mode (pull instead of build)
+
+The steps above build the app image from the synced source — the right choice
+when you track rolling `main`. To run a **pinned, pre-built release** instead,
+set `PRECIS_MCP_TAG` to a published image version and bring the stack up
+*without* `--build`:
+
+```bash
+PRECIS_MCP_TAG=0.1.1 docker compose -f deploy/docker-compose.yml up -d
+```
+
+Compose pulls `ghcr.io/precis-finance/precis-mcp:<tag>` (falling back to a
+source build only if the tag is absent). Upgrading is then bumping
+`PRECIS_MCP_TAG` to a newer release and re-running `up -d` — no rebuild. The
+bundled Postgres / ClickHouse / Keycloak images are unaffected either way; they
+stay digest-pinned in the compose file. Still read `CHANGELOG.md` first, and
+back up (step 1) — a tag bump is an upgrade like any other.
+
 ## Rolling back
 
 There are no reverse migrations. Rolling back is a **restore**: check out
@@ -63,7 +81,11 @@ the previous tag, rebuild, then restore the pre-upgrade bundle —
 What a sync ships is exactly what runs: Python dependencies install from a
 hashed lockfile (`requirements.lock`), and the bundled Postgres / ClickHouse
 / Keycloak images are digest-pinned (`tag@sha256:…`) in the compose files,
-so an upstream re-tag can't change your stack silently. The flip side is
+so an upstream re-tag can't change your stack silently. The precis-mcp
+application image follows the same principle — published to
+`ghcr.io/precis-finance/precis-mcp` and selected by `PRECIS_MCP_TAG` (a release
+version by default, pinnable to a `@sha256:` digest), or built from the synced
+source when you run `up --build`. The flip side is
 that base-image and dependency security fixes do **not** arrive by
 re-pulling — they arrive as pin bumps in sync commits (CI gates the pin set
 with `pip-audit` and a trivy image scan). If you maintain a fork, regenerate

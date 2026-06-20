@@ -13,6 +13,24 @@ from precis_mcp.engine.types import ROLLED_UP, DimensionKey, RawResults
 # Column names in dimension filters must be valid SQL identifiers.
 _SAFE_COLUMN_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
+# The fact (domain source view) is always aliased so derived breakdown axes can
+# join their leaf dimension table without column-name collisions. Every fact
+# column reference is qualified with this alias; joined dim columns use d0/d1/…
+_FACT = "t"
+
+# Time-hierarchy dimensions are resolved as columns on the fact view, not via a
+# join. Their rollup lives in the semantic layer (period parents are
+# denormalised); a join would also entangle the non-additive closing-metric path.
+_TIME_HIERARCHY_DIMS = {"period", "quarter", "fiscal_year"}
+
+
+def _qualify(column: str) -> str:
+    """Prefix a fact-view column with the fact alias. Literal source values
+    (e.g. ``"1"`` for a row count) are not identifiers and pass through."""
+    if _SAFE_COLUMN_RE.match(column):
+        return f"{_FACT}.{column}"
+    return column
+
 if TYPE_CHECKING:
     pass
 
@@ -70,9 +88,9 @@ def compile_predicates_to_sql(where: list[MetricPredicate]) -> str:
 
     parts: list[str] = []
     for pred in where:
-        col = pred.column
-        if not _SAFE_COLUMN_RE.match(col):
-            raise ValueError(f"Invalid predicate column name: {col!r}")
+        if not _SAFE_COLUMN_RE.match(pred.column):
+            raise ValueError(f"Invalid predicate column name: {pred.column!r}")
+        col = f"{_FACT}.{pred.column}"
         if pred.op == "eq":
             parts.append(f"{col} = {_sql_literal(pred.value)}")
         elif pred.op == "neq":
@@ -109,7 +127,7 @@ def build_metric_expression(metric: BaseMetric) -> str:
       abs     -> SUM(CASE WHEN {filter} THEN ABS({col}) ELSE 0 END)
       negate  -> SUM(CASE WHEN {filter} THEN -{col} ELSE 0 END)
     """
-    col = metric.source_column
+    col = _qualify(metric.source_column)
     filt = compile_predicates_to_sql(metric.where)
 
     if metric.aggregation == "count_distinct":
@@ -138,7 +156,7 @@ def build_avg_metric_expression(metric: BaseMetric) -> str:
 
     NULLIF guards against zero period count (empty result set).
     """
-    col = metric.source_column
+    col = _qualify(metric.source_column)
     filt = compile_predicates_to_sql(metric.where)
 
     if metric.sign == "abs":
@@ -150,7 +168,7 @@ def build_avg_metric_expression(metric: BaseMetric) -> str:
 
     return (
         f"SUM(CASE WHEN {filt} THEN {value_expr} ELSE 0 END)"
-        f" / NULLIF(COUNT(DISTINCT period), 0)"
+        f" / NULLIF(COUNT(DISTINCT {_FACT}.period), 0)"
     )
 
 
@@ -176,22 +194,99 @@ def _base_metrics_for_query(
     return metrics
 
 
+@dataclass
+class _Join:
+    """A LEFT JOIN to a leaf dimension table for a derived breakdown axis."""
+    alias: str          # d0, d1, …
+    table: str          # semantic.dim_cost_centre
+    fact_col: str       # the leaf's bound column on the fact view
+    dim_key_col: str    # the leaf dim table's key column
+
+    def sql(self) -> str:
+        return (
+            f"LEFT JOIN {self.table} {self.alias} "
+            f"ON {_FACT}.{self.fact_col} = {self.alias}.{self.dim_key_col}"
+        )
+
+
+def _resolve_breakdowns(
+    dimensions: list[str],
+    catalogue: Catalogue,
+    domain_cat,
+) -> tuple[dict[str, str], list[_Join]]:
+    """Resolve each breakdown axis to a qualified SQL expression plus any joins.
+
+    - Bound axes (leaf dimensions, period, or an explicit derived binding) read a
+      fact-view column: ``t.<column>``.
+    - Time-hierarchy parents (quarter/fiscal_year) stay denormalised on the fact
+      view: ``t.<name>``.
+    - Other derived/parent axes join their leaf dimension table and group by the
+      derived value column: ``d0.<column>``. One join per leaf, deduplicated.
+
+    Returns ``(name_to_expr, joins)``. Raises ``KeyError`` for a derived axis
+    whose leaf is not bound to this domain (so it cannot be joined).
+    """
+    bound = {cd.key: cd.source for cd in domain_cat.dimensions if cd.source}
+    name_to_expr: dict[str, str] = {}
+    joins: list[_Join] = []
+    join_by_key: dict[tuple[str, str], _Join] = {}
+
+    for name in dimensions:
+        if name in bound:
+            name_to_expr[name] = f"{_FACT}.{bound[name]}"
+            continue
+        if name in _TIME_HIERARCHY_DIMS:
+            name_to_expr[name] = f"{_FACT}.{name}"
+            continue
+
+        dim = catalogue.dimensions.get(name)
+        resolution = None
+        if dim is not None:
+            for leaf_key, res in dim._transitive.items():
+                if leaf_key in bound:
+                    resolution = res
+                    break
+        if resolution is None:
+            raise KeyError(
+                f"Dimension {name!r} is not groupable on domain "
+                f"{domain_cat.domain!r}: it resolves to no leaf dimension bound "
+                "to this domain."
+            )
+
+        fact_col = bound[resolution.leaf_dimension]
+        join_key = (resolution.source_table, fact_col)
+        join = join_by_key.get(join_key)
+        if join is None:
+            join = _Join(
+                alias=f"d{len(joins)}",
+                table=resolution.source_table,
+                fact_col=fact_col,
+                dim_key_col=resolution.leaf_key_column,
+            )
+            joins.append(join)
+            join_by_key[join_key] = join
+        name_to_expr[name] = f"{join.alias}.{resolution.filter_column}"
+
+    return name_to_expr, joins
+
+
 def _select_cols(
     metrics: list[BaseMetric],
     rollup_group: str | None,
     dimensions: list[str],
+    name_to_expr: dict[str, str],
 ) -> str:
     """Build SELECT column list.
+
+    Dimension axes are selected as ``<expr> AS <catalogue name>`` so the result
+    reader keys rows by the catalogue name regardless of how (or where) the
+    underlying column lives.
 
     rollup_group controls which expression builder to use:
       'avg'     -> build_avg_metric_expression
       otherwise -> build_metric_expression
     """
-    parts: list[str] = []
-
-    # Dimension columns come first
-    for dim in dimensions:
-        parts.append(dim)
+    parts: list[str] = [f"{name_to_expr[dim]} AS {dim}" for dim in dimensions]
 
     for m in metrics:
         if rollup_group == "avg":
@@ -235,24 +330,33 @@ def _where_clause(
         "period_end": data_query.period_end,
     }
 
-    conditions.append("scenario = {scenario_id:String}")
+    conditions.append(f"{_FACT}.scenario = {{scenario_id:String}}")
 
     if closing_only and closing_time_dims and source_view:
-        # Full period range — the subquery below handles the per-group closing filter
-        conditions.append("period >= {period_start:String} AND period <= {period_end:String}")
-        group_cols = ", ".join(closing_time_dims)
+        # Full period range — the subquery below handles the per-group closing
+        # filter. Time-hierarchy dims are fact columns, so the outer reference is
+        # t-qualified while the self-contained subquery stays unqualified.
         conditions.append(
-            f"({group_cols}, period) IN ("
-            f"SELECT {group_cols}, max(period) "
+            f"{_FACT}.period >= {{period_start:String}} "
+            f"AND {_FACT}.period <= {{period_end:String}}"
+        )
+        outer_cols = ", ".join(f"{_FACT}.{d}" for d in closing_time_dims)
+        inner_cols = ", ".join(closing_time_dims)
+        conditions.append(
+            f"({outer_cols}, {_FACT}.period) IN ("
+            f"SELECT {inner_cols}, max(period) "
             f"FROM {source_view} "
             f"WHERE scenario = {{scenario_id:String}} "
             f"AND period >= {{period_start:String}} AND period <= {{period_end:String}} "
-            f"GROUP BY {group_cols})"
+            f"GROUP BY {inner_cols})"
         )
     elif closing_only:
-        conditions.append("period = {period_end:String}")
+        conditions.append(f"{_FACT}.period = {{period_end:String}}")
     else:
-        conditions.append("period >= {period_start:String} AND period <= {period_end:String}")
+        conditions.append(
+            f"{_FACT}.period >= {{period_start:String}} "
+            f"AND {_FACT}.period <= {{period_end:String}}"
+        )
 
     # rollup_group controls expression builder only — not a DB column, no WHERE filter
 
@@ -265,7 +369,9 @@ def _where_clause(
                 raise ValueError(f"Invalid dimension column name: {col!r}")
             param_key = f"dimf_{col}"
             params[param_key] = values
-            conditions.append(f"toString({col}) IN ({{{param_key}:Array(String)}})")
+            conditions.append(
+                f"toString({_FACT}.{col}) IN ({{{param_key}:Array(String)}})"
+            )
 
     # ----- Commit-awareness modifiers -----
     # Only apply commit_id filters for versioned domains (those whose source
@@ -276,7 +382,7 @@ def _where_clause(
 
         if "uncommitted_delta" in modifiers:
             # Only uncommitted changes
-            conditions.append("commit_id = '__uncommitted__'")
+            conditions.append(f"{_FACT}.commit_id = '__uncommitted__'")
         elif "uncommitted" in modifiers:
             # Include everything (committed + uncommitted) — no commit_id filter
             pass
@@ -284,14 +390,14 @@ def _where_clause(
             # Changes from a single commit only
             commit_id = modifiers["commit_delta"]
             params["mod_commit_id"] = commit_id
-            conditions.append("commit_id = {mod_commit_id:String}")
+            conditions.append(f"{_FACT}.commit_id = {{mod_commit_id:String}}")
         elif "commit" in modifiers:
             # Time travel: state as of a specific commit (all commits up to and including)
             target_commit = modifiers["commit"]
             params["mod_target_commit"] = target_commit
             params["mod_scenario_id_commits"] = data_query.scenario_id
             conditions.append(
-                "commit_id IN ("
+                f"{_FACT}.commit_id IN ("
                 "SELECT commit_id FROM planning.commits "
                 "WHERE scenario_id = {mod_scenario_id_commits:String} "
                 "AND created_at <= ("
@@ -303,7 +409,7 @@ def _where_clause(
         else:
             # Default: committed-only (exclude uncommitted changes).
             # For actuals, commit_id = '__actuals__' so this is harmless.
-            conditions.append("commit_id != '__uncommitted__'")
+            conditions.append(f"{_FACT}.commit_id != '__uncommitted__'")
 
     where = "\nAND ".join(conditions)
     return where, params
@@ -332,20 +438,28 @@ def _grouping_sets(dimensions: list[str], grains: GrainSpec) -> list[list[str]]:
     return sets
 
 
-def _group_clause_from_sets(dimensions: list[str], sets: list[list[str]]) -> tuple[str, bool]:
+def _group_clause_from_sets(
+    dimensions: list[str],
+    sets: list[list[str]],
+    name_to_expr: dict[str, str] | None = None,
+) -> tuple[str, bool]:
     """Build the GROUP BY clause and whether a GROUPING() tag column is needed
     from an explicit list of grouping sets.
 
     No dimensions, or a single set equal to the full dimension list, yields a
     plain GROUP BY (or nothing) and no tag column — identical SQL to a
     single-grain query. Anything else yields GROUP BY GROUPING SETS and signals
-    that a GROUPING() column must be selected to tag each row's grain.
+    that a GROUPING() column must be selected to tag each row's grain. The
+    grouping keys are emitted as their resolved SQL expressions.
     """
+    name_to_expr = name_to_expr or {}
+    def _expr(d: str) -> str:
+        return name_to_expr.get(d, d)
     if not dimensions:
         return "", False
     if sets == [list(dimensions)]:
-        return f"GROUP BY {', '.join(dimensions)}", False
-    rendered = ", ".join("(" + ", ".join(s) + ")" for s in sets)
+        return f"GROUP BY {', '.join(_expr(d) for d in dimensions)}", False
+    rendered = ", ".join("(" + ", ".join(_expr(d) for d in s) + ")" for s in sets)
     return f"GROUP BY GROUPING SETS ({rendered})", True
 
 
@@ -392,16 +506,29 @@ def generate_sql(
         period_parent_keys = set(period_dim.parents.keys())
         closing_time_dims = [d for d in dimensions if d in period_parent_keys]
 
+    name_to_expr, joins = _resolve_breakdowns(dimensions, catalogue, domain)
+
     return _generate_aggregate_sql(
         data_query, all_base, source_view, dimensions, dimension_filters,
         versioned=versioned,
         closing_time_dims=closing_time_dims,
         grains=grains,
+        name_to_expr=name_to_expr,
+        joins=joins,
     )
 
 
+def _from_clause(source_view: str, joins: list[_Join]) -> str:
+    """The aliased FROM with any derived-axis leaf joins appended."""
+    sql = f"FROM {source_view} {_FACT}"
+    for join in joins:
+        sql += f"\n{join.sql()}"
+    return sql
+
+
 def _full_grouping_expr(
-    dimensions: list[str], time_dims: list[str], grouped_dims: set[str]
+    dimensions: list[str], time_dims: list[str], grouped_dims: set[str],
+    name_to_expr: dict[str, str] | None = None,
 ) -> str:
     """SQL reproducing GROUPING(<all dims>) for the closing-totals query.
 
@@ -411,12 +538,13 @@ def _full_grouping_expr(
     most-significant-bit-first (first dimension = highest bit), matching how
     _row_to_dimension_key decodes the tag.
     """
+    name_to_expr = name_to_expr or {}
     n = len(dimensions)
     terms: list[str] = []
     for i, d in enumerate(dimensions):
         weight = 1 << (n - 1 - i)
         if d in grouped_dims:
-            terms.append(f"GROUPING({d}) * {weight}")
+            terms.append(f"GROUPING({name_to_expr.get(d, d)}) * {weight}")
         else:
             terms.append(str(weight))
     return " + ".join(terms)
@@ -431,6 +559,8 @@ def _closing_totals_query(
     versioned: bool,
     time_dims: list[str],
     time_rolled_sets: list[list[str]],
+    name_to_expr: dict[str, str],
+    joins: list[_Join],
 ) -> tuple[str, dict]:
     """Totals for closing metrics where a time dimension is rolled up.
 
@@ -454,11 +584,11 @@ def _closing_totals_query(
 
     grouped_dims = {d for s in nt_sets for d in s}
 
-    select_parts: list[str] = list(non_time)
+    select_parts: list[str] = [f"{name_to_expr[d]} AS {d}" for d in non_time]
     select_parts += [f"'' AS {t}" for t in time_dims]
     select_parts += [f"{build_metric_expression(m)} AS {m.key}" for m in metrics]
     select_parts.append(
-        f"{_full_grouping_expr(dimensions, time_dims, grouped_dims)} AS {GROUPING_COL}"
+        f"{_full_grouping_expr(dimensions, time_dims, grouped_dims, name_to_expr)} AS {GROUPING_COL}"
     )
 
     where, params = _where_clause(
@@ -472,12 +602,14 @@ def _closing_totals_query(
 
     sql = (
         "SELECT\n    " + "\n    , ".join(select_parts) + "\n"
-        f"FROM {source_view}\n"
+        + _from_clause(source_view, joins) + "\n"
         f"WHERE {where}"
     )
     # A lone grand-total set has no group keys — plain aggregate, no GROUPING SETS.
     if nt_sets != [[]]:
-        rendered = ", ".join("(" + ", ".join(s) + ")" for s in nt_sets)
+        rendered = ", ".join(
+            "(" + ", ".join(name_to_expr[d] for d in s) + ")" for s in nt_sets
+        )
         sql += f"\nGROUP BY GROUPING SETS ({rendered})"
     return sql, params
 
@@ -491,6 +623,8 @@ def _generate_aggregate_sql(
     versioned: bool = True,
     closing_time_dims: list[str] | None = None,
     grains: GrainSpec = GrainSpec(),
+    name_to_expr: dict[str, str] | None = None,
+    joins: list[_Join] | None = None,
 ) -> list[tuple[str, dict]]:
     """One query per rollup_method group present in metrics.
 
@@ -500,6 +634,9 @@ def _generate_aggregate_sql(
     present, because a rolled-up closing balance over time is non-additive and
     needs a dedicated query.
     """
+    name_to_expr = name_to_expr or {}
+    joins = joins or []
+
     # Group metrics by rollup_method
     groups: dict[str, list[BaseMetric]] = {"sum": [], "avg": [], "closing": []}
     for m in metrics:
@@ -509,7 +646,8 @@ def _generate_aggregate_sql(
 
     def _build(rollup_group: str, where_extra: dict, sets: list[list[str]]) -> None:
         select_cols = _select_cols(
-            groups[rollup_group], rollup_group=rollup_group, dimensions=dimensions
+            groups[rollup_group], rollup_group=rollup_group, dimensions=dimensions,
+            name_to_expr=name_to_expr,
         )
         where, params = _where_clause(
             data_query,
@@ -519,12 +657,13 @@ def _generate_aggregate_sql(
             versioned=versioned,
             **where_extra,
         )
-        group_clause, tag = _group_clause_from_sets(dimensions, sets)
+        group_clause, tag = _group_clause_from_sets(dimensions, sets, name_to_expr)
         if tag:
-            select_cols += f"\n    , GROUPING({', '.join(dimensions)}) AS {GROUPING_COL}"
+            grouping_cols = ", ".join(name_to_expr[d] for d in dimensions)
+            select_cols += f"\n    , GROUPING({grouping_cols}) AS {GROUPING_COL}"
         sql = (
             f"SELECT\n    {select_cols}\n"
-            f"FROM {source_view}\n"
+            + _from_clause(source_view, joins) + "\n"
             f"WHERE {where}"
         )
         if group_clause:
@@ -565,6 +704,7 @@ def _generate_aggregate_sql(
                     _closing_totals_query(
                         data_query, groups["closing"], source_view, dimensions,
                         dimension_filters, versioned, time_dims, time_rolled,
+                        name_to_expr=name_to_expr, joins=joins,
                     )
                 )
 

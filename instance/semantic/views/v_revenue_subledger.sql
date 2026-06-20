@@ -17,11 +17,12 @@
 --   - `etc_cost_eur` and `eac_cost_eur` are not landed — no catalogue metric
 --     references them. Retained here as NULL placeholders.
 
+-- Cost-centre hierarchy parents (department/division) are resolved by the
+-- engine via a leaf-dimension join at query time, so they are not denormalised
+-- here. Period parents (quarter/fiscal_year) and client attributes stay.
 SELECT
     s.project_id     AS project,
     s.cost_centre AS cost_centre,
-    coalesce(cc.department, '') AS department,
-    coalesce(cc.division, '')   AS division,
     s.client_id                  AS client,
     coalesce(cl.client_name, '') AS client_name,
     coalesce(cl.industry, '')    AS client_industry,
@@ -52,8 +53,6 @@ SELECT
     s.cum_billed                                 AS cum_billed,
     s.wip_balance                                AS wip_balance
 FROM live.fact_revenue_subledger s
-LEFT JOIN live.dim_cost_centre cc
-    ON s.cost_centre = cc.cost_centre
 LEFT JOIN live.dim_client cl
     ON s.client_id = cl.client_id
 LEFT JOIN live.dim_period pd

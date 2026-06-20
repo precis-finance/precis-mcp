@@ -126,7 +126,7 @@ class TestGrainsSql:
     def test_detail_only_is_plain_group_by(self, catalogue):
         dq = _make_query(["revenue"])
         sql, _ = generate_sql(dq, catalogue, ["cost_centre"], None, GrainSpec())[0]
-        assert "GROUP BY cost_centre" in sql
+        assert "GROUP BY t.cost_centre" in sql
         assert "GROUPING SETS" not in sql
         assert GROUPING_COL not in sql
 
@@ -136,7 +136,7 @@ class TestGrainsSql:
             dq, catalogue, ["cost_centre"], None, GrainSpec(detail=True, grand_total=True),
         )[0]
         assert "GROUP BY GROUPING SETS" in sql
-        assert f"GROUPING(cost_centre) AS {GROUPING_COL}" in sql
+        assert f"GROUPING(t.cost_centre) AS {GROUPING_COL}" in sql
 
 
 class TestClosingTotalsQuery:
@@ -149,11 +149,13 @@ class TestClosingTotalsQuery:
         sql, _ = _closing_totals_query(
             dq, [m], "semantic.v_pnl", ["cost_centre", "quarter"],
             None, True, ["quarter"], [["cost_centre"], []],
+            name_to_expr={"cost_centre": "t.cost_centre", "quarter": "t.quarter"},
+            joins=[],
         )
-        assert "period = {period_end:String}" in sql      # global period_end, not per-group
+        assert "t.period = {period_end:String}" in sql    # global period_end, not per-group
         assert "'' AS quarter" in sql                      # rolled-up time placeholder
-        assert f"GROUPING(cost_centre) * 2 + 1 AS {GROUPING_COL}" in sql
-        assert "GROUP BY GROUPING SETS ((cost_centre), ())" in sql
+        assert f"GROUPING(t.cost_centre) * 2 + 1 AS {GROUPING_COL}" in sql
+        assert "GROUP BY GROUPING SETS ((t.cost_centre), ())" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +170,7 @@ class TestPeriodDimension:
         results = generate_sql(dq, catalogue, ["period"], None)
         assert len(results) == 1
         sql, _ = results[0]
-        assert "GROUP BY period" in sql
+        assert "GROUP BY t.period" in sql
 
     def test_no_rollup_method_in_where(self, catalogue):
         dq = _make_query(["revenue", "direct_cost"])
@@ -188,7 +190,7 @@ class TestPeriodDimension:
         dq = _make_query(["revenue"])
         results = generate_sql(dq, catalogue, ["period"], None)
         sql, _ = results[0]
-        assert "ABS(amount)" in sql
+        assert "ABS(t.amount)" in sql
 
     def test_period_in_params(self, catalogue):
         dq = _make_query(["revenue"])
@@ -202,7 +204,7 @@ class TestPeriodDimension:
         results = generate_sql(dq, catalogue, ["quarter"], None)
         assert len(results) == 1
         sql, _ = results[0]
-        assert "GROUP BY quarter" in sql
+        assert "GROUP BY t.quarter" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -219,13 +221,13 @@ class TestAggregateSumGroup:
         dq = _make_query(["revenue", "direct_cost"])
         results = generate_sql(dq, catalogue, [], None)
         sql, _ = results[0]
-        assert "GROUP BY period" not in sql
+        assert "GROUP BY t.period" not in sql
 
     def test_revenue_uses_abs_in_aggregate(self, catalogue):
         dq = _make_query(["revenue"])
         results = generate_sql(dq, catalogue, [], None)
         sql, _ = results[0]
-        assert "ABS(amount)" in sql
+        assert "ABS(t.amount)" in sql
 
     def test_period_range_in_where(self, catalogue):
         dq = _make_query(["revenue"])
@@ -245,7 +247,7 @@ class TestAggregateAvgGroup:
         results = generate_sql(dq, catalogue, [], None)
         assert len(results) == 1
         sql, _ = results[0]
-        assert "/ NULLIF(COUNT(DISTINCT period), 0)" in sql
+        assert "/ NULLIF(COUNT(DISTINCT t.period), 0)" in sql
 
     def test_single_query_for_avg_group(self, catalogue):
         dq = _make_query(["avg_fte_billable"])
@@ -315,13 +317,13 @@ class TestCostCentreDimension:
         dq = _make_query(["revenue"])
         results = generate_sql(dq, catalogue, ["cost_centre"], {"cost_centre": ["CC-SE", "CC-NO"]})
         sql, _ = results[0]
-        assert "GROUP BY cost_centre" in sql
+        assert "GROUP BY t.cost_centre" in sql
 
     def test_cc_in_filter_when_dimension_filters_provided(self, catalogue):
         dq = _make_query(["revenue"])
         results = generate_sql(dq, catalogue, ["cost_centre"], {"cost_centre": ["CC-SE", "CC-NO"]})
         sql, params = results[0]
-        assert "toString(cost_centre) IN" in sql
+        assert "toString(t.cost_centre) IN" in sql
         assert "{dimf_cost_centre:Array(String)}" in sql
         assert params["dimf_cost_centre"] == ["CC-SE", "CC-NO"]
 
@@ -337,7 +339,7 @@ class TestCostCentreDimension:
         dq = _make_query(["revenue"])
         results = generate_sql(dq, catalogue, ["cost_centre"], {"cost_centre": []})
         sql, params = results[0]
-        assert "toString(cost_centre) IN" in sql
+        assert "toString(t.cost_centre) IN" in sql
         assert params["dimf_cost_centre"] == []
 
 
@@ -350,13 +352,104 @@ class TestNoDimensionFilters:
         dq = _make_query(["revenue"])
         results = generate_sql(dq, catalogue, [], None)
         sql, _ = results[0]
-        assert "toString(cost_centre) IN" not in sql
+        assert "toString(t.cost_centre) IN" not in sql
 
     def test_period_no_filter(self, catalogue):
         dq = _make_query(["revenue"])
         results = generate_sql(dq, catalogue, ["period"], None)
         sql, _ = results[0]
-        assert "toString(cost_centre) IN" not in sql
+        assert "toString(t.cost_centre) IN" not in sql
+
+
+# ---------------------------------------------------------------------------
+# 6b. Derived breakdown axes — leaf join (no denormalised fact column needed)
+# ---------------------------------------------------------------------------
+
+class TestDerivedBreakdownJoin:
+    def test_derived_axis_emits_leaf_join_and_alias_back(self, catalogue):
+        dq = _make_query(["revenue"])
+        sql, _ = generate_sql(dq, catalogue, ["department"], None)[0]
+        assert (
+            "LEFT JOIN semantic.dim_cost_centre d0 "
+            "ON t.cost_centre = d0.cost_centre"
+        ) in sql
+        assert "d0.department AS department" in sql
+        assert "GROUP BY d0.department" in sql
+
+    def test_two_derived_same_leaf_share_one_join(self, catalogue):
+        dq = _make_query(["revenue"])
+        sql, _ = generate_sql(dq, catalogue, ["department", "division"], None)[0]
+        assert sql.count("LEFT JOIN") == 1
+        assert "GROUP BY d0.department, d0.division" in sql
+
+    def test_derived_plus_leaf_mix_one_join(self, catalogue):
+        dq = _make_query(["revenue"])
+        sql, _ = generate_sql(dq, catalogue, ["department", "cost_centre"], None)[0]
+        assert sql.count("LEFT JOIN") == 1
+        assert "d0.department AS department" in sql
+        assert "t.cost_centre AS cost_centre" in sql
+
+    def test_renamed_leaf_column_used_as_join_key(self, catalogue):
+        # timesheets binds employee -> employee_id; grade (parent of employee)
+        # joins dim_employee on the renamed column.
+        dq = _make_query(["hours_worked"], domain="timesheets")
+        sql, _ = generate_sql(dq, catalogue, ["grade"], None)[0]
+        assert (
+            "LEFT JOIN semantic.dim_employee d0 "
+            "ON t.employee_id = d0.employee_id"
+        ) in sql
+        assert "GROUP BY d0.grade" in sql
+
+    def test_time_parent_stays_fact_column_no_join(self, catalogue):
+        dq = _make_query(["revenue"])
+        sql, _ = generate_sql(dq, catalogue, ["quarter"], None)[0]
+        assert "LEFT JOIN" not in sql
+        assert "GROUP BY t.quarter" in sql
+
+    def test_derived_axis_leaf_not_bound_raises(self, catalogue):
+        # pipeline binds crm_account, not cost_centre; department is not groupable.
+        metric = next(
+            k for k, m in catalogue.metrics.items()
+            if isinstance(m, BaseMetric) and m.domain == "pipeline"
+        )
+        dq = _make_query([metric], domain="pipeline")
+        with pytest.raises(KeyError, match="not groupable"):
+            generate_sql(dq, catalogue, ["department"], None)
+
+
+class _FakeIbisCol:
+    """Chainable no-op stand-in for an Ibis column expression."""
+    def __eq__(self, other): return self
+    def __ge__(self, other): return self
+    def __le__(self, other): return self
+    def __and__(self, other): return self
+    def sum(self): return self
+    def name(self, n): return self
+    __hash__ = None
+
+
+class _FakeIbisTable:
+    def __init__(self, columns): self.columns = columns
+    def __getitem__(self, key): return _FakeIbisCol()
+    def filter(self, *a, **k): return self
+
+
+class _FakeIbisConn:
+    def __init__(self, columns): self._table = _FakeIbisTable(columns)
+    def table(self, *a, **k): return self._table
+
+
+class TestFederatedBreakdownGuard:
+    def test_missing_foreign_column_raises_clear_error(self, federated_catalogue):
+        from precis_mcp.engine.ibis_retriever import (
+            IbisRetrieverError,
+            build_ibis_query,
+        )
+        # The foreign view exposes cost_centre but not the derived 'department'.
+        conn = _FakeIbisConn(["scenario", "period", "cost_centre", "amount"])
+        dq = _make_query(["federated_net_amount"], domain="gl_federated")
+        with pytest.raises(IbisRetrieverError, match="not groupable on federated"):
+            build_ibis_query(dq, federated_catalogue, ["department"], None, conn)
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +461,7 @@ class TestBuildMetricExpression:
         m = catalogue.metrics["revenue"]
         assert isinstance(m, BaseMetric)
         expr = build_metric_expression(m)
-        assert "ABS(amount)" in expr
+        assert "ABS(t.amount)" in expr
         assert "CASE WHEN" in expr
 
     def test_raw_sign(self, catalogue):
@@ -381,7 +474,7 @@ class TestBuildMetricExpression:
         assert "CASE WHEN" in expr
         assert "ABS" not in expr
         # Ensure no leading negation inside THEN clause
-        assert "THEN amount" in expr
+        assert "THEN t.amount" in expr
 
     def test_negate_sign(self):
         # Create a synthetic metric with sign=negate
@@ -397,14 +490,14 @@ class TestBuildMetricExpression:
             fs_group="Test",
         )
         expr = build_metric_expression(m)
-        assert "THEN -amount" in expr
+        assert "THEN -t.amount" in expr
         assert "ABS" not in expr
 
     def test_build_avg_expression(self, catalogue):
         m = catalogue.metrics["avg_fte_billable"]
         assert isinstance(m, BaseMetric)
         expr = build_avg_metric_expression(m)
-        assert "/ NULLIF(COUNT(DISTINCT period), 0)" in expr
+        assert "/ NULLIF(COUNT(DISTINCT t.period), 0)" in expr
         assert "CASE WHEN" in expr
 
     def test_count_distinct_uses_source_column(self):
@@ -424,7 +517,7 @@ class TestBuildMetricExpression:
         )
         expr = build_metric_expression(m)
         assert "COUNT(DISTINCT CASE WHEN" in expr
-        assert "THEN opportunity_id END" in expr
+        assert "THEN t.opportunity_id END" in expr
         assert "employee_id" not in expr
 
 
@@ -437,11 +530,11 @@ class TestCompilePredicatesToSql:
             MetricPredicate(column="category", op="eq", value="AAA"),
             MetricPredicate(column="region", op="in", values=["UK", "US"]),
         ]
-        assert compile_predicates_to_sql(where) == "category = 'AAA' AND region IN ('UK', 'US')"
+        assert compile_predicates_to_sql(where) == "t.category = 'AAA' AND t.region IN ('UK', 'US')"
 
     def test_string_value_is_quoted(self):
         where = [MetricPredicate(column="account", op="eq", value="9100")]
-        assert compile_predicates_to_sql(where) == "account = '9100'"
+        assert compile_predicates_to_sql(where) == "t.account = '9100'"
 
     def test_unsafe_column_rejected(self):
         where = [MetricPredicate(column="a; DROP TABLE", op="eq", value="x")]
@@ -562,8 +655,8 @@ class TestGLDomain:
         filters = {"account": ["4100", "4200"]}
         results = generate_sql(dq, catalogue, ["account"], filters)
         sql, _ = results[0]
-        assert "toString(account) IN" in sql
-        assert "GROUP BY account" in sql
+        assert "toString(t.account) IN" in sql
+        assert "GROUP BY t.account" in sql
 
     def test_pnl_domain_still_uses_v_pnl(self, catalogue):
         dq = _make_query(["revenue"], domain="pnl")
@@ -585,16 +678,20 @@ class TestTimesheetsDomain:
         assert "semantic.v_timesheets" in sql
 
     def test_timesheets_with_employee_dimension(self, catalogue):
+        # timesheets binds key 'employee' to the physical column 'employee_id';
+        # the engine groups by the column and aliases it back to the key.
         dq = _make_query(["hours_worked"], domain="timesheets")
-        results = generate_sql(dq, catalogue, ["employee_id"], None)
+        results = generate_sql(dq, catalogue, ["employee"], None)
         sql, _ = results[0]
-        assert "GROUP BY employee_id" in sql
+        assert "employee_id AS employee" in sql
+        assert "GROUP BY t.employee_id" in sql
 
     def test_timesheets_with_project_dimension(self, catalogue):
         dq = _make_query(["hours_billable"], domain="timesheets")
-        results = generate_sql(dq, catalogue, ["project_id"], None)
+        results = generate_sql(dq, catalogue, ["project"], None)
         sql, _ = results[0]
-        assert "GROUP BY project_id" in sql
+        assert "project_id AS project" in sql
+        assert "GROUP BY t.project_id" in sql
 
     def test_timesheets_by_employee_and_period(self, catalogue):
         dq = _make_query(["hours_worked", "hours_billable"], domain="timesheets")
@@ -605,11 +702,12 @@ class TestTimesheetsDomain:
         assert "GROUP BY" in sql
 
     def test_timesheets_with_employee_filter(self, catalogue):
+        # Filtering by the 'employee' key resolves to the 'employee_id' column.
         dq = _make_query(["hours_worked"], domain="timesheets")
-        filters = {"employee": ["42", "43"]}
+        filters = {"employee_id": ["42", "43"]}
         results = generate_sql(dq, catalogue, [], filters)
         sql, _ = results[0]
-        assert "toString(employee) IN" in sql
+        assert "toString(t.employee_id) IN" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -629,7 +727,7 @@ class TestPayrollDomain:
         results = generate_sql(dq, catalogue, [], None)
         assert len(results) == 1
         sql, _ = results[0]
-        assert "NULLIF(COUNT(DISTINCT period), 0)" in sql
+        assert "NULLIF(COUNT(DISTINCT t.period), 0)" in sql
 
     def test_payroll_cost_metrics(self, catalogue):
         dq = _make_query(["gross_salary", "total_payroll_cost"], domain="payroll")
@@ -649,7 +747,7 @@ class TestPayrollDomain:
         dq = _make_query(["total_payroll_cost"], domain="payroll")
         results = generate_sql(dq, catalogue, ["cost_centre"], None)
         sql, _ = results[0]
-        assert "GROUP BY cost_centre" in sql
+        assert "GROUP BY t.cost_centre" in sql
 
 
 # ---------------------------------------------------------------------------

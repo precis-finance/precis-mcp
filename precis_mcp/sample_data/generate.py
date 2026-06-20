@@ -2122,34 +2122,40 @@ CREATE INDEX idx_finance_gl_detail_fsline ON finance.gl_transactions_detail (fs_
 
 CREATE VIEW finance.gl_metric_view AS
 SELECT
-    transaction_id,
-    journal_entry_id,
-    journal_line_id,
-    scenario,
-    entity_id,
-    period,
-    posting_date,
-    document_ref,
-    document_type,
-    supplier_id,
-    supplier_name,
-    account_code,
-    cost_centre_id AS cost_centre,
-    account_code AS account,
-    account_name,
-    account_type,
-    fs_line,
-    project_id,
-    debit_amount,
-    credit_amount,
-    amount,
-    currency,
-    description,
-    source_system,
-    posted_by,
-    approval_status,
-    created_at
-FROM finance.gl_transactions_detail;
+    gl.transaction_id,
+    gl.journal_entry_id,
+    gl.journal_line_id,
+    gl.scenario,
+    gl.entity_id,
+    gl.period,
+    gl.posting_date,
+    gl.document_ref,
+    gl.document_type,
+    gl.supplier_id,
+    gl.supplier_name,
+    gl.account_code,
+    gl.cost_centre_id AS cost_centre,
+    gl.account_code AS account,
+    gl.account_name,
+    gl.account_type,
+    gl.fs_line,
+    -- Cost-centre hierarchy denormalised onto the federated view: the engine
+    -- cannot join ClickHouse master data to a foreign fact at query time, so
+    -- the parents must be present here to be groupable.
+    cc.department,
+    cc.division,
+    gl.project_id,
+    gl.debit_amount,
+    gl.credit_amount,
+    gl.amount,
+    gl.currency,
+    gl.description,
+    gl.source_system,
+    gl.posted_by,
+    gl.approval_status,
+    gl.created_at
+FROM finance.gl_transactions_detail gl
+LEFT JOIN master.cost_centres cc ON gl.cost_centre_id = cc.cost_centre_id;
 
 -- finance.project_worklog_detail
 -- Postgres-only federated source: enriched worklog / time-entry detail.
@@ -2192,35 +2198,40 @@ CREATE INDEX idx_finance_worklog_emp    ON finance.project_worklog_detail (emplo
 
 CREATE VIEW finance.worklog_metric_view AS
 SELECT
-    worklog_id,
-    timesheet_id,
-    scenario,
-    period,
-    work_date,
-    employee_id,
-    employee_code,
-    employee_name,
-    grade,
-    project_id,
-    project_code,
-    project_name,
-    client_id,
-    client_name,
-    cost_centre_id AS cost_centre,
-    activity_type,
-    task_code,
-    task_description,
-    hours_worked,
-    hours_billable,
-    daily_bill_rate_eur,
-    billable_amount_eur,
-    approval_status,
-    submitted_at,
-    approved_at,
-    approved_by,
-    source_system,
-    created_at
-FROM finance.project_worklog_detail;
+    w.worklog_id,
+    w.timesheet_id,
+    w.scenario,
+    w.period,
+    w.work_date,
+    w.employee_id,
+    w.employee_code,
+    w.employee_name,
+    w.grade,
+    w.project_id,
+    w.project_code,
+    w.project_name,
+    w.client_id,
+    w.client_name,
+    w.cost_centre_id AS cost_centre,
+    -- Cost-centre hierarchy denormalised onto the federated view (see
+    -- gl_metric_view): the engine cannot join master data across backends.
+    cc.department,
+    cc.division,
+    w.activity_type,
+    w.task_code,
+    w.task_description,
+    w.hours_worked,
+    w.hours_billable,
+    w.daily_bill_rate_eur,
+    w.billable_amount_eur,
+    w.approval_status,
+    w.submitted_at,
+    w.approved_at,
+    w.approved_by,
+    w.source_system,
+    w.created_at
+FROM finance.project_worklog_detail w
+LEFT JOIN master.cost_centres cc ON w.cost_centre_id = cc.cost_centre_id;
 
 -- finance.intercompany_transactions — intra-group recharge memo subledger.
 -- Standalone (not tied to GL/plan): a cost centre (cost_centre_id) is recharged

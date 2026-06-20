@@ -239,12 +239,18 @@ class Dimension(BaseModel):
 
 
 class CubeDimension(BaseModel):
-    """Maps a dimension to a column in a domain's source view.
+    """Binds a catalogue dimension to a column in a domain's source view.
 
-    Native dimensions reference a first-class master dimension via ``source``.
+    ``key`` is the catalogue dimension name the agent uses in both ``filters``
+    and ``dimensions`` — for a native binding it must be a first-class master
+    (or derived) dimension key. ``source`` is the physical column on the
+    domain's source view the engine reads / groups by.
+
     Federated/Ibis domains can also declare source-only inline dimensions for
     reporting axes; those have no master data table and cannot be filtered in
-    the phase-one implementation.
+    the phase-one implementation. For an inline dimension ``source`` is the
+    view column (defaulting to ``key`` when omitted) and there is no master
+    dimension to reference.
     """
     model_config = ConfigDict(extra="forbid")
 
@@ -581,11 +587,17 @@ def _parse_dimension(key: str, raw: dict) -> Dimension:
 
 def _parse_cube_dimension(raw: dict) -> CubeDimension:
     try:
+        source = raw.get("source", "")
+        source_inline = raw.get("source_inline", False)
+        # Inline axes name their own column via ``source``; default it to the
+        # catalogue key when omitted so column == key for the simple case.
+        if source_inline and not source:
+            source = raw["key"]
         return CubeDimension(
             key=raw["key"],
             label=raw["label"],
-            source=raw.get("source", ""),
-            source_inline=raw.get("source_inline", False),
+            source=source,
+            source_inline=source_inline,
             filterable=raw.get("filterable", True),
         )
     except KeyError as exc:
@@ -1170,11 +1182,6 @@ def validate_catalogue(catalogue: Catalogue) -> None:
                         f"Domain {domain_name!r} cube dimension {cd.key!r} is "
                         "source_inline but the domain is not an Ibis federated domain"
                     )
-                if cd.source:
-                    raise CatalogueError(
-                        f"Domain {domain_name!r} cube dimension {cd.key!r} is "
-                        "source_inline and must not define source"
-                    )
                 if cd.filterable:
                     raise CatalogueError(
                         f"Domain {domain_name!r} cube dimension {cd.key!r} is "
@@ -1184,12 +1191,12 @@ def validate_catalogue(catalogue: Catalogue) -> None:
             if not cd.source:
                 raise CatalogueError(
                     f"Domain {domain_name!r} cube dimension {cd.key!r} must define "
-                    "source unless source_inline: true"
+                    "source (the view column) unless source_inline: true"
                 )
-            if cd.source not in dimensions:
+            if cd.key not in dimensions:
                 raise CatalogueError(
-                    f"Domain {domain_name!r} cube dimension {cd.key!r} references "
-                    f"unknown master dimension {cd.source!r}"
+                    f"Domain {domain_name!r} cube dimension {cd.key!r} is not a "
+                    f"known catalogue dimension"
                 )
 
     # --- Plan dataset checks ---

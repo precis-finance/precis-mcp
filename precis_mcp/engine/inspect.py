@@ -165,14 +165,15 @@ def _filter_dimensions(
     for dim in domain.dimensions:
         if not dim.filterable or dim.source_inline:
             continue
-        bound_leaf_columns.setdefault(dim.source, dim.key)
-        master_dim = catalogue.dimensions.get(dim.source)
+        # dim.key is the catalogue dimension name; dim.source is the view column.
+        bound_leaf_columns.setdefault(dim.key, dim.source)
+        master_dim = catalogue.dimensions.get(dim.key)
         add_filter_dimension(
-            dim.source,
-            dim.label or (master_dim.label if master_dim is not None else dim.source),
             dim.key,
+            dim.label or (master_dim.label if master_dim is not None else dim.key),
+            dim.source,
         )
-        walk_parents(dim.source, dim.source, dim.key)
+        walk_parents(dim.source, dim.key, dim.source)
 
     for dim_key, dim in catalogue.dimensions.items():
         if not dim.is_ragged or dim.leaf_dimension not in bound_leaf_columns:

@@ -25,6 +25,16 @@ process itself.
 | `PRECIS_INGRESS_MODE` | `bundled` | Ingress preset for `deploy-mcp.sh --ingress-mode`: `bundled` (the Caddy auto-HTTPS proxy) / `byo` (your own ingress fronts the `127.0.0.1`-published ports). |
 | `PRECIS_DOMAIN` | empty | Bare hostname (the host part of `PRECIS_BASE_URL`, no scheme) the bundled Caddy proxy serves and obtains its Let's Encrypt certificate for. Required when `bundled-proxy` is in `COMPOSE_PROFILES`; ignored otherwise. |
 
+## Application image
+
+Consumed by Docker Compose when it brings the stack up (and at build time), not
+by the server process itself.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PRECIS_MCP_TAG` | current release | Tag of `ghcr.io/precis-finance/precis-mcp` the app services pull. Compose uses this image when present and falls back to building from source when it is absent (or on `up --build`). Pin a version or a `@sha256:` digest for an immutable re-pull — see [Upgrading](../operations/upgrades.md#dependency-and-image-pinning). |
+| `PRECIS_EXTRAS` | empty | Optional warehouse drivers baked into the image **at build time** (comma-separated: `bigquery,snowflake,mssql,databricks`). Only used on the build-from-source path; the published image is the core build without extras. |
+
 ## ClickHouse (the read layer)
 
 | Variable | Default | Purpose |

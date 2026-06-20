@@ -67,9 +67,10 @@ views). Scenarios the caller's profile doesn't grant are omitted entirely.
 ### `list_kpis`
 
 No parameters. The metric catalogue: every metric's key, label, format,
-domain, and description, plus per domain the `available_dimensions`
-(breakdown keys), `filter_keys` (what you may filter on), and
-`axis_only_dimensions`. This is the map for composing `run_metric` calls.
+domain, and description, plus per domain the `dimension_keys` (one list of
+catalogue dimension names, each valid in both `filters` and `dimensions`) and
+`axis_only_dimensions` (inline federated axes valid only in `dimensions`). This
+is the map for composing `run_metric` calls.
 
 ### `search_hierarchy`
 
@@ -103,8 +104,8 @@ scenarios, optionally crossed with a dimension breakdown.
 | `statement` | string | Statement key from the catalogue (defaults to `pnl`). |
 | `scenarios` | list of objects | Each `{"scenario": "<key>", "alias": "<display label>"}` — registry keys, variance keys, shifted views. Scenario-gated. |
 | `period_start` / `period_end` | string | `YYYY-MM` range. |
-| `filters` | object | Dimension key → member id(s). Keys from `filter_keys`; member ids from `search_hierarchy`. |
-| `dimensions` | list of strings | Breakdown columns (e.g. `["period"]`, `["cost_centre"]`). |
+| `filters` | object | Dimension key → member id(s). Keys from `dimension_keys`; member ids from `search_hierarchy`. |
+| `dimensions` | list of strings | Breakdown dimension keys — the same `dimension_keys` (e.g. `["period"]`, `["cost_centre"]`). |
 | `scale` | int | Currency scaling power: `0` units, `3` thousands, `6` millions. |
 | `decimals` | int | Decimal places. |
 

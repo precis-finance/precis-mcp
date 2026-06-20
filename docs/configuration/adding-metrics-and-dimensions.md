@@ -88,6 +88,18 @@ nothing else to register.
   predicates, ANDed together, that compiles to both ClickHouse SQL and Ibis.
   A raw-SQL filter string is rejected at load time with a `CatalogueError`.
 
+- **`where:` predicates are fact-view columns only — they do not join
+  hierarchies.** A metric `where:` is a row-level scan predicate compiled
+  directly against the domain's source view. Unlike a breakdown axis or a
+  request `filter` — both hierarchy-aware (a breakdown joins the leaf dimension
+  table; a filter resolves an ancestor to leaf IDs) — a `where:` column must be
+  physically present on the source view. `where: { column: department }` will
+  **not** auto-join the cost-centre dimension; it needs a `department` column on
+  the view, or the query fails with an unknown column. This is why attributes a
+  metric filters on (e.g. `fs_line`, `account_type`) are denormalised onto the
+  fact view even when they are also derived dimensions. To define a metric by a
+  hierarchy attribute, denormalise it onto the view or compose a derived metric.
+
 - **Derived metrics reference metric keys, not columns.** A
   `DerivedMetric.formula` is evaluated after retrieval using already-computed
   metric values. It supports arithmetic, parentheses, numeric constants,
@@ -106,15 +118,29 @@ nothing else to register.
   `source_inline: true` entry exists only on an Ibis federated domain and can
   be used in `dimensions`, but not in `filters` or security scope.
 
-- **Filters name catalogue dimensions, not necessarily source-view columns.**
-  If a domain maps `key: cost_centre_id` to `source: cost_centre`, clients
-  filter with `{"cost_centre": "..."}` and group with
-  `dimensions=["cost_centre_id"]`. The engine resolves the filter through the
-  master dimension and applies it to the domain column.
+- **One key, both surfaces.** A domain `dimensions:` binding is
+  `key: <catalogue dimension name>` / `source: <physical view column>`. The
+  catalogue name in `key` is what clients pass in **both** `filters` and
+  `dimensions`; the engine translates it to the `source` column for the WHERE
+  clause and the GROUP BY. If a domain maps `key: cost_centre` to
+  `source: cost_centre_id`, clients filter with `{"cost_centre": "..."}` and
+  group with `dimensions=["cost_centre"]` — never the column name. The source
+  view can name its column however it likes.
 
 - **Dimension hierarchies are bottom-up.** Leaf dimensions can declare
   `parents:`. Derived dimensions declare `derived_from:`. The loader computes
   transitive closure so ancestor filters can resolve to leaf IDs.
+
+- **Hierarchy dimensions are groupable without a fact-view column (ClickHouse).**
+  A derived/parent dimension (`department`, `division`, `grade`) needs neither a
+  domain binding nor a denormalised column on the fact view to be a breakdown
+  axis: the engine joins its leaf dimension table at query time and groups by the
+  value column. The only precondition is that the domain binds the **leaf** the
+  derived dimension descends from. Two exceptions: **federated** domains cannot
+  join across backends, so a derived axis there must be a column on the foreign
+  view (named to the catalogue key); and the period parents `quarter` /
+  `fiscal_year` are read as fact-view columns, so the semantic view must expose
+  them.
 
 - **Statements are display contracts.** A statement is an ordered list of
   metric keys and `separator`, or a `concat:` of other statements and
@@ -179,21 +205,21 @@ metrics:
     scale_exempt: true
 ```
 
-### Filter key vs. breakdown key
-
-These are not always the same.
+### Binding a dimension to a view column
 
 ```yaml
 dimensions:
-  - key: cost_centre_id
+  - key: cost_centre
     label: Cost centre
-    source: cost_centre
+    source: cost_centre_id
 ```
 
-The filter key is `cost_centre` because that is the master dimension. The
-breakdown key is `cost_centre_id` because that is the column on this domain's
-source view. `list_kpis` exposes all three lists per domain:
-`available_dimensions`, `filter_keys`, and `axis_only_dimensions`.
+`key` is the catalogue dimension name — the single key clients use in both
+`filters` and `dimensions`. `source` is the physical column on this domain's
+source view; the engine groups by it and filters against it, but clients never
+name it. `list_kpis` exposes one `dimension_keys` list (valid in both surfaces)
+plus `axis_only_dimensions` for inline federated axes that can only be grouped,
+not filtered.
 
 ---
 
@@ -214,14 +240,20 @@ must expose:
 
 - `scenario`
 - `period`
-- every domain dimension column you want to group by
+- the **leaf** dimension key columns the domain binds (the join keys for
+  hierarchy breakdowns — e.g. `cost_centre`, `employee_id`); derived/parent
+  columns (`department`, `division`, `grade`) are **not** needed, the engine
+  joins the leaf dimension table for those
+- the period parents `quarter` / `fiscal_year` if you want to group by them
 - every column referenced by metric `source_column`
 - every column referenced by metric `where:`
 - `commit_id` if the domain is `versioned: true`
 
-For a ClickHouse domain, the engine reads this view directly. For an Ibis
-domain, the same idea applies to the foreign table/view: it must be
-denormalised enough for the engine to aggregate without joins.
+For a ClickHouse domain, the engine reads this view and joins leaf dimension
+tables for derived breakdowns. For an Ibis domain, the engine cannot join across
+backends: the foreign table/view must be denormalised enough to aggregate
+without joins, including any hierarchy column you want as a breakdown axis
+(named to the catalogue key).
 
 ### Step 2: Define or reuse master dimensions
 
@@ -297,9 +329,9 @@ source_view: semantic.v_sales
 versioned: false
 
 dimensions:
-  - key: product_id
+  - key: product
     label: Product
-    source: product
+    source: product_id
   - key: period
     label: Period
     source: period
@@ -425,9 +457,9 @@ backend_kind: ibis
 versioned: false
 
 dimensions:
-  - key: cost_centre_id
+  - key: cost_centre
     label: Cost centre
-    source: cost_centre
+    source: cost_centre_id
 
   - key: document_ref
     label: Document
@@ -436,8 +468,9 @@ dimensions:
 ```
 
 `backend: customer_pg` references the `Source` declared in
-`instance/integrations/sources/customer_pg.yml`. `cost_centre_id` is
-native/filterable because it maps to the master dimension `cost_centre`.
+`instance/integrations/sources/customer_pg.yml`. `cost_centre` is
+native/filterable: its `key` is the master dimension and `source` is the
+foreign column.
 `document_ref` is axis-only: clients can group by it, but cannot filter or
 scope on it. The engine rejects `filters: {"document_ref": ...}`.
 
@@ -474,18 +507,17 @@ disk. Verify
 the SQL file's stem matches the bare identifier in `source_view`, and that the
 semantic views have been applied to ClickHouse (re-run the provisioner).
 
-### A filter key is rejected even though a breakdown works
+### Using a source-view column name instead of the catalogue key
 
-A domain dimension binding carries two independent names. `key` is the **physical
-view column**: it goes straight into `GROUP BY`, so it is the **breakdown** name
-(`dimensions: ["product_id"]`). `source` is the **master-dimension key**: the
-engine resolves it through that dimension's data and hierarchy to leaf IDs before
-building the `WHERE`, so it is the **filter** name (`filters: {"product": "..."}`).
-So with `key: product_id, source: product`, you break down on `product_id` and
-filter on `product` — never the reverse. The split is deliberate: a breakdown is a
-raw column slice, while filtering needs the master dimension's hierarchy and scope
-resolution — which is also what lets role-playing dimensions and cross-domain reuse
-work.
+Both `filters` and `dimensions` take the **catalogue dimension name** (the
+binding's `key`), never the physical column. A domain dimension binding is
+`key: <catalogue name>` / `source: <view column>`: the engine translates `key`
+to the `source` column for both the `GROUP BY` and the `WHERE`. With
+`key: product, source: product_id`, use `dimensions: ["product"]` and
+`filters: {"product": "..."}` — passing `"product_id"` is wrong. Filtering still
+resolves the catalogue name through the master dimension's data, hierarchy, and
+scope before building the `WHERE`, which is what lets role-playing dimensions and
+cross-domain reuse work.
 
 ### A source-only inline dimension cannot be filtered
 
@@ -525,7 +557,7 @@ composes queries from it. Check:
 - the domain `dimensions:` list contains the intended key;
 - the dimension `label` is clear;
 - `description` and `calculation_note` on metrics distinguish similar metrics;
-- inline axes appear under `axis_only_dimensions`, not `filter_keys`.
+- inline axes appear under `axis_only_dimensions`, not `dimension_keys`.
 
 ---
 
@@ -546,7 +578,7 @@ composes queries from it. Check:
 | Do | Don't |
 |---|---|
 | Create a first-class dimension when clients need filters, scope, hierarchy, search, or display labels. | Use `source_inline: true` for governed master data. |
-| Bind each domain column to the correct master dimension using `source:`. | Assume the domain column key and filter key must be identical. |
+| Set `key:` to the catalogue dimension name and `source:` to the physical view column. | Put the column name in `key`, or assume the column must match the catalogue name. |
 | Declare parent relationships bottom-up on the child dimension. | Add ad hoc hierarchy logic in query code. |
 | Use ragged dimensions for explicit multi-level rollup trees. | Model alternate rollup paths by overloading one dimension's parent chain. |
 
@@ -568,7 +600,7 @@ composes queries from it. Check:
 - [ ] Every row filter is a structured `where:` predicate list — no raw SQL filter strings.
 - [ ] Every derived metric formula references existing metric keys and uses only supported arithmetic.
 - [ ] Every statement line references an existing metric key or `separator`.
-- [ ] Every native domain dimension has `key`, `label`, and `source`, and `source` exists in the first-class dimensions map.
+- [ ] Every native domain dimension has `key`, `label`, and `source`; `key` is a first-class dimension name and `source` is the physical view column.
 - [ ] Every inline dimension is on an Ibis domain and declares `source_inline: true` plus `filterable: false`.
 - [ ] Any dimension clients need to filter/scope/search is first-class, not inline.
 - [ ] Any new leaf dimension has a source table, key column, and optional display/sort attributes backed by real columns.

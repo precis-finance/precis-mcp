@@ -38,15 +38,15 @@ dimensions:
   - key: cost_centre
     label: "Cost centre"
     source: cost_centre
-  - key: employee_id
+  - key: employee
     label: Employee
-    source: employee
-  - key: project_id
+    source: employee_id
+  - key: project
     label: Project
-    source: project
-  - key: client_id
+    source: project_id
+  - key: client
     label: Client
-    source: client
+    source: client_id
   - key: period
     label: Period
     source: period

@@ -78,6 +78,12 @@ class TestMapToViewColumn:
         # CubeDimension in pnl.yml has key="cost_centre"
         assert col == "cost_centre"
 
+    def test_timesheets_employee_maps_to_employee_id_column(self, catalogue):
+        # timesheets binds key 'employee' to the physical column 'employee_id'.
+        dim = catalogue.dimensions["employee"]
+        col = _map_to_view_column(dim, catalogue, "timesheets")
+        assert col == "employee_id"
+
     def test_unknown_domain_falls_back_to_leaf_column(self, catalogue):
         dim = catalogue.dimensions["cost_centre"]
         col = _map_to_view_column(dim, catalogue, "nonexistent_domain")

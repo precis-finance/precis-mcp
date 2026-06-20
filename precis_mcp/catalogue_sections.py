@@ -113,25 +113,27 @@ def render_statements_table(catalogue: Catalogue) -> str:
 def _collect_domain_keys(
     domain_name: str,
     catalogue: Catalogue,
-) -> tuple[list[str], list[str], list[str]]:
-    """Collect all valid filter keys and breakdown keys for a single domain.
+) -> tuple[list[str], list[str]]:
+    """Collect the valid dimension keys for a single domain.
 
-    Returns (filter_keys, breakdown_keys, axis_only_keys) as sorted lists.
+    A catalogue dimension name is valid in both ``filters`` and ``dimensions``.
+    Inline axes are the only breakdown-only exception (no master data, cannot
+    be filtered).
+
+    Returns (dimension_keys, axis_only_keys) as sorted lists.
     """
     from precis_mcp.engine.context_validation import (
         _get_valid_filter_keys_for_domains,
-        _get_valid_dimension_keys_for_domains,
     )
     domain_set = {domain_name}
-    filter_keys = sorted(_get_valid_filter_keys_for_domains(domain_set, catalogue))
-    breakdown_keys = sorted(_get_valid_dimension_keys_for_domains(domain_set, catalogue))
+    dimension_keys = sorted(_get_valid_filter_keys_for_domains(domain_set, catalogue))
     domain = catalogue.domains.get(domain_name)
     axis_only_keys = sorted(
         cd.key
         for cd in (domain.dimensions if domain else [])
         if cd.source_inline and not cd.filterable
     )
-    return filter_keys, breakdown_keys, axis_only_keys
+    return dimension_keys, axis_only_keys
 
 
 def _collect_domain_metrics(catalogue: Catalogue) -> dict[str, list[str]]:
@@ -173,12 +175,15 @@ def render_dimensions_table(catalogue: Catalogue) -> str:
     """Render available dimensions and filter keys per domain for the system prompt.
 
     Two sections:
-    1. Per-domain quick reference — flat list of ALL valid filter and breakdown
-       keys so the agent doesn't need to chain cube bindings + parent walks.
+    1. Per-domain quick reference — flat list of ALL valid dimension keys so the
+       agent doesn't need to chain cube bindings + parent walks.
     2. Dimension reference — types, examples, and filtering rules.
     """
     lines = [
-        "## Available Dimensions & Filter Keys",
+        "## Available Dimensions",
+        "",
+        "Each key below is a catalogue dimension name. Use the **same** key in "
+        "both `filters` and `dimensions` — never a source-view column name.",
         "",
     ]
 
@@ -193,18 +198,20 @@ def render_dimensions_table(catalogue: Catalogue) -> str:
     for domain_name, domain in catalogue.domains.items():
         if not domain.dimensions:
             continue
-        filter_keys, breakdown_keys, axis_only_keys = _collect_domain_keys(
+        dimension_keys, axis_only_keys = _collect_domain_keys(
             domain_name, catalogue,
         )
         metrics = domain_metrics.get(domain_name, [])
         lines.append(f"**`{domain_name}`**")
         if metrics:
             lines.append(f"- Metrics: {', '.join(f'`{m}`' for m in metrics)}")
-        lines.append(f"- Filter keys (`filters`): {', '.join(f'`{k}`' for k in filter_keys)}")
-        lines.append(f"- Breakdown keys (`dimensions`): {', '.join(f'`{k}`' for k in breakdown_keys)}")
+        lines.append(
+            "- Dimension keys (`filters` and `dimensions`): "
+            f"{', '.join(f'`{k}`' for k in dimension_keys)}"
+        )
         if axis_only_keys:
             lines.append(
-                "- Axis-only breakdown keys (not valid in `filters`): "
+                "- Axis-only keys (valid in `dimensions` only, not `filters`): "
                 f"{', '.join(f'`{k}`' for k in axis_only_keys)}"
             )
         lines.append("")
@@ -214,7 +221,9 @@ def render_dimensions_table(catalogue: Catalogue) -> str:
     # ------------------------------------------------------------------
     lines.append("### Dimension Reference")
     lines.append("")
-    lines.append("| Filter key | Type | Example |")
+    lines.append("The same key works as a filter and as a breakdown axis.")
+    lines.append("")
+    lines.append("| Dimension key | Type | Example |")
     lines.append("|---|---|---|")
 
     emitted: set[str] = set()
