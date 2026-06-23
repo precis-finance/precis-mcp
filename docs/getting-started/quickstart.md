@@ -4,9 +4,10 @@ The fastest way to see Précis-MCP working: a server on your own machine,
 authenticated with a single static key. Use it for a trial, a local demo, or to
 check your catalogue before exposing the server to other people.
 
-**You need:** Docker with the compose plugin, a checkout of this repository,
-and an MCP client to point at it (Claude Code, Claude Desktop, or any
-MCP-capable agent). **Time:** about 15 minutes, most of it the demo-data
+**You need:** Docker with the compose plugin, the single-user compose file (one
+download — no full checkout required, because the published image bundles the
+demo model), and an MCP client to point at it (Claude Code, Claude Desktop, or
+any MCP-capable agent). **Time:** about 15 minutes, most of it the demo-data
 generation in step 2.
 
 For a multi-user server that real users sign in to, see
@@ -14,12 +15,19 @@ For a multi-user server that real users sign in to, see
 
 ## 1. Start the stack
 
-From the repository root:
+Download the single-user compose file and start the stack — it **pulls the
+published image**, which already contains the demo model, so there is nothing
+to build and no instance to supply:
 
 ```bash
+curl -O https://raw.githubusercontent.com/precis-finance/precis-mcp/main/deploy/docker-compose.local.yml
 export MCP_DEV_KEY=$(openssl rand -hex 32)
-docker compose -f deploy/docker-compose.local.yml up -d --build
+docker compose -f docker-compose.local.yml up -d
 ```
+
+(From a repository checkout the file is `deploy/docker-compose.local.yml` —
+adjust the `-f` path. `up --build` builds the image from a checkout instead of
+pulling; pin a release with `PRECIS_MCP_TAG`.)
 
 That runs three containers: a bundled ClickHouse, a bundled Postgres (the
 ingestion bookkeeping database, doubling as the demo's mock data source), and
@@ -31,7 +39,7 @@ you, on this machine.
 Keep hold of the key (`echo $MCP_DEV_KEY`); your client sends it on every
 request.
 
-**You should see:** `docker compose -f deploy/docker-compose.local.yml ps`
+**You should see:** `docker compose -f docker-compose.local.yml ps`
 lists three services — `clickhouse` and `postgres` (healthy) and
 `precis-mcp` — all `Up`.
 
@@ -43,7 +51,7 @@ the server container** (it has the package installed and the connections
 configured):
 
 ```bash
-docker compose -f deploy/docker-compose.local.yml exec precis-mcp \
+docker compose -f docker-compose.local.yml exec precis-mcp \
   python -m precis_mcp.sample_data
 ```
 
@@ -56,7 +64,7 @@ Takes a few minutes; it ends with a validation report.
 Then confirm the deployment is coherent:
 
 ```bash
-docker compose -f deploy/docker-compose.local.yml exec precis-mcp \
+docker compose -f docker-compose.local.yml exec precis-mcp \
   python -m precis_mcp.clickhouse_init --scope open --check
 ```
 
@@ -120,14 +128,22 @@ source — never a value guessed over raw rows.
 ## 5. Bring your own model
 
 Your model — `catalogue/`, `semantic/`, `integrations/`, `scenarios.yml` —
-lives in an `instance/` directory; the repository ships a complete demo
-instance showing the shape. Point the stack at yours by setting
-`PRECIS_INSTANCE_DIR` to its host path before `docker compose up` (it is
-mounted read-only over the bundled one). Then provision the *schema only*
-(instead of running the demo generator):
+lives in an `instance/` directory; the image bundles a complete demo instance
+showing the shape (it is what serves by default). To serve **your own** instead,
+download the instance overlay alongside the compose file, set
+`PRECIS_INSTANCE_DIR` to your directory, and bring the stack up with both files —
+the overlay bind-mounts your model over the bundled one:
 
 ```bash
-docker compose -f deploy/docker-compose.local.yml exec precis-mcp \
+curl -O https://raw.githubusercontent.com/precis-finance/precis-mcp/main/deploy/docker-compose.instance.yml
+PRECIS_INSTANCE_DIR=/path/to/your/instance docker compose \
+  -f docker-compose.local.yml -f docker-compose.instance.yml up -d
+```
+
+Then provision the *schema only* (instead of running the demo generator):
+
+```bash
+docker compose -f docker-compose.local.yml exec precis-mcp \
   python -m precis_mcp.clickhouse_init --scope open
 ```
 

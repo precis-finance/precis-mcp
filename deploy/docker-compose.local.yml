@@ -7,23 +7,27 @@
 # multi-user server real users sign in to, use the Keycloak bundle in
 # docker-compose.yml instead.
 #
-# Run from the repo root (export the key — later compose commands against
-# this file re-read it):
+# No source checkout needed: this file pulls the published image, which already
+# bundles the demo model. Download just this one file, mint a key (later compose
+# commands against it re-read the key), and bring it up:
+#   curl -O https://raw.githubusercontent.com/precis-finance/precis-mcp/main/deploy/docker-compose.local.yml
 #   export MCP_DEV_KEY=$(openssl rand -hex 32)
-#   docker compose -f deploy/docker-compose.local.yml up -d --build
+#   docker compose -f docker-compose.local.yml up -d
+# (`up --build` builds from a source checkout instead — for rolling main / forks.)
 #
 # Then point an MCP client at  http://127.0.0.1:8768/mcp  with header
 #   Authorization: Bearer $MCP_DEV_KEY
 #
 # Populate the demo model (sample data through the full ingestion pipeline):
-#   docker compose -f deploy/docker-compose.local.yml exec precis-mcp \
+#   docker compose -f docker-compose.local.yml exec precis-mcp \
 #     python -m precis_mcp.sample_data
 #
-# Bring your own model + data:
-#   - set PRECIS_INSTANCE_DIR to a directory holding catalogue/, semantic/,
-#     integrations/ (defaults to the repo's bundled demo instance);
-#   - point CH* at a ClickHouse you already populate, or load into this one
-#     (see open_docs/configuration/ingestion.md).
+# Bring your own model: the image's bundled demo instance serves by default.
+# To serve your own, overlay the instance mount and point it at your directory:
+#   PRECIS_INSTANCE_DIR=/path/to/your/instance docker compose \
+#     -f docker-compose.local.yml -f docker-compose.instance.yml up -d
+# (point CH* at a ClickHouse you already populate, or load into this one — see
+# open_docs/configuration/ingestion.md).
 #
 # Note: this single-user trial always STARTS the bundled ClickHouse (there is no
 # profile to suppress it — its value is zero-config). You can point CH* at your
@@ -68,6 +72,10 @@ services:
       retries: 5
 
   precis-mcp:
+    # Pull the published image by default (it bundles the demo instance, so no
+    # source checkout is needed); `up --build` builds from a checkout instead.
+    # Same image as the multi-user bundle.
+    image: ghcr.io/precis-finance/precis-mcp:${PRECIS_MCP_TAG:-0.1.1}
     build:
       context: ..
       dockerfile: Dockerfile
@@ -116,10 +124,10 @@ services:
     ports:
       - "127.0.0.1:8768:8768"
     volumes:
-      # The instance model (catalogue/semantic/integrations). Mounted over the
-      # image's bundled demo instance so a deployer supplies their own without
-      # rebuilding. server.py reads instance/catalogue relative to /app.
-      - ${PRECIS_INSTANCE_DIR:-../instance}:/app/instance:ro
+      # No instance mount by default: the image already bundles the demo model,
+      # so the single-user trial needs no source checkout. To serve your own
+      # model, overlay docker-compose.instance.yml (which adds the bind mount
+      # over /app/instance and requires PRECIS_INSTANCE_DIR).
       - ingest_dropbox:/data/ingest
     depends_on:
       clickhouse:

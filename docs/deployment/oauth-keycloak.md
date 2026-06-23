@@ -48,8 +48,12 @@ Bring it up:
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-This starts your data store, the bundled Keycloak with its seeded realm, and the
-server. To let your users sign in with your corporate IdP, point Keycloak's
+This pulls the pinned published image (`ghcr.io/precis-finance/precis-mcp`,
+selected by `PRECIS_MCP_TAG`) and starts your data store, the bundled Keycloak
+with its seeded realm, and the server. Pulling a pinned release is the default;
+`docker compose … up -d --build` builds from source instead (rolling `main` /
+forks). From a workstation, `scripts/deploy-mcp.sh` does the same, pull-first —
+see the [production checklist](production-checklist.md#3-deploy). To let your users sign in with your corporate IdP, point Keycloak's
 identity-brokering at it (OIDC **or SAML**) — Keycloak stays the issuer and the
 above doesn't change; the walkthrough is
 [Sign in with your corporate IdP](keycloak-brokering.md). This is also the

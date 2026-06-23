@@ -15,7 +15,6 @@ period_dim AS (
 )
 
 SELECT
-    concat(f.period, f.cost_centre, f.counterparty_cc) AS pk,
     'ENT-001' AS entity_id,
     f.cost_centre AS cost_centre,
     coalesce(cc.cost_centre_name, '') AS cost_centre_name,

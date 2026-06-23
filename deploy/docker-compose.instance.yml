@@ -1,0 +1,19 @@
+# Optional overlay: serve YOUR OWN model instead of the image's bundled demo.
+#
+# The published image bundles the demo instance, so the single-user bundle
+# (docker-compose.local.yml) serves it with no mount. Overlay this file to
+# bind-mount your own instance/ over /app/instance:
+#
+#   PRECIS_INSTANCE_DIR=/path/to/your/instance docker compose \
+#     -f docker-compose.local.yml -f docker-compose.instance.yml up -d
+#
+# PRECIS_INSTANCE_DIR is required (the overlay fails fast if it is unset) — the
+# point of opting into the overlay is to replace the bundled model with yours.
+#
+# The multi-user bundle (docker-compose.yml) mounts the operator's instance
+# directly and does not need this overlay.
+
+services:
+  precis-mcp:
+    volumes:
+      - ${PRECIS_INSTANCE_DIR:?set PRECIS_INSTANCE_DIR to your instance directory to overlay your own model}:/app/instance:ro

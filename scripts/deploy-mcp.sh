@@ -9,10 +9,12 @@
 # firewall, /opt/precis-mcp). SSH access as root via the host alias.
 #
 # Usage:
-#   bash scripts/deploy-mcp.sh                      # sync + build + up + health
+#   bash scripts/deploy-mcp.sh                      # sync + PULL published image + up + health (default)
 #   bash scripts/deploy-mcp.sh --server HOST        # target host (default: precis-mcp)
 #   bash scripts/deploy-mcp.sh --sync-only          # just rsync code + instance, stop
-#   bash scripts/deploy-mcp.sh --no-build           # up without rebuilding the image
+#   bash scripts/deploy-mcp.sh --tag 0.1.1          # pull a specific published tag (sets PRECIS_MCP_TAG)
+#   bash scripts/deploy-mcp.sh --build              # build the image from source instead of pulling (rolling main / forks)
+#   bash scripts/deploy-mcp.sh --no-build           # explicit pull (the default; kept for back-compat)
 #   bash scripts/deploy-mcp.sh --data-mode MODE     # provision ClickHouse (see below)
 #   bash scripts/deploy-mcp.sh --extras bigquery    # bake a warehouse driver into the image (bigquery|snowflake|mssql|databricks; comma-separate for several). Re-run on a live instance to add one later — rebuilds (cached layers) + recreates.
 #   bash scripts/deploy-mcp.sh --data-only          # provision + exit (no Keycloak/server)
@@ -64,7 +66,12 @@ PROJECT="$(basename "$REMOTE_DIR")"    # compose project = data-volume prefix (p
 MOCK_SOURCE_DB="fpa_actuals"           # the sample-data generator's PGDATABASE default
 
 DO_SYNC=true
-DO_BUILD=true
+# Pull the published GHCR image by default; build from source only on --build.
+# This matches the prevailing self-hosted-OSS convention (Authentik, Plausible,
+# Supabase, n8n, …): the first-run path pulls a pinned release, and building is
+# the opt-in for rolling `main` / forks / warehouse extras. PRECIS_MCP_TAG (in
+# deploy/.env, default in the compose) selects which published tag to pull.
+DO_BUILD=false
 DO_UP=true
 SYNC_ONLY=false
 DATA_ONLY=false
@@ -73,13 +80,17 @@ DATA_MODE="${PRECIS_DATA_MODE:-}"           # byo | bundle-empty | bundle-sample
 AUTH_MODE="${PRECIS_AUTH_MODE:-keycloak}"   # keycloak (mode B) | oidc (mode C)
 INGRESS_MODE="${PRECIS_INGRESS_MODE:-bundled}"  # bundled (Caddy) | byo (own ingress)
 EXTRAS="${PRECIS_EXTRAS:-}"                  # comma-separated warehouse drivers baked into the image: bigquery,snowflake,mssql,databricks
+MCP_TAG="${PRECIS_MCP_TAG:-}"               # published image tag to pull (--tag); empty = the compose default
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --server)      SERVER="$2"; shift 2; continue ;;
         --server=*)    SERVER="${1#*=}"; shift; continue ;;
         --sync-only)   SYNC_ONLY=true ;;
-        --no-build)    DO_BUILD=false ;;
+        --build)       DO_BUILD=true ;;                  # build from source instead of pulling the published image
+        --no-build)    DO_BUILD=false ;;                 # explicit pull (the default; kept for back-compat)
+        --tag)         MCP_TAG="$2"; shift 2; continue ;;   # published image tag to pull (sets PRECIS_MCP_TAG)
+        --tag=*)       MCP_TAG="${1#*=}"; shift; continue ;;
         --data-mode)   DATA_MODE="$2"; shift 2; continue ;;
         --data-mode=*) DATA_MODE="${1#*=}"; shift; continue ;;
         --auth-mode)   AUTH_MODE="$2"; shift 2; continue ;;
@@ -109,6 +120,12 @@ if [ -n "$EXTRAS" ]; then
             *) echo "Invalid --extras component: ${_e} (bigquery | snowflake | mssql | databricks)"; exit 1 ;;
         esac
     done
+    # Extras bake into the image at build time; the published image is the core
+    # build without them. So --extras forces the build path (it cannot be pulled).
+    if ! $DO_BUILD; then
+        echo "  --extras (${EXTRAS}) requires building the image — enabling the build path (the published image ships without warehouse drivers)."
+        DO_BUILD=true
+    fi
 fi
 
 # Data axis → its COMPOSE profile. byo excludes the bundled ClickHouse service;
@@ -170,6 +187,24 @@ if $TEARDOWN; then
     "
     echo "Teardown complete. Re-run without --teardown for a fresh install."
     exit 0
+fi
+
+# ── Guard: refuse the commercial instance in the open bundle ──────────
+# The open bundle serves an OPEN-shaped instance (plan lands statically in
+# live.fact_plan, no plan-write catalogue). The monorepo's instance/ is the
+# COMMERCIAL example (plan via planning.entries), marked by
+# catalogue/plan_datasets.yml — which the open overlay drops at publish time.
+# Deploying it into the open bundle silently shadows the image's open instance
+# and breaks the generator (live.fact_plan missing). Catch it before the sync.
+_inst="${PRECIS_INSTANCE_DIR:-${PROJECT_DIR}/instance}"
+if [ -f "${_inst}/catalogue/plan_datasets.yml" ]; then
+    echo "ERROR: ${_inst} is the COMMERCIAL instance (catalogue/plan_datasets.yml" >&2
+    echo "       present), not the open one — the open bundle needs the open instance." >&2
+    echo "       Deploy from the public mirror, or assemble the open tree first and" >&2
+    echo "       deploy from there:" >&2
+    echo "         python scripts/publish_open.py --out build/precis-mcp-mirror --skip-tests" >&2
+    echo "         cd build/precis-mcp-mirror && bash scripts/deploy-mcp.sh --server ${SERVER} ..." >&2
+    exit 1
 fi
 
 # ── 1. Sync code + instance ──────────────────────────────────────────
@@ -264,6 +299,24 @@ if [ -n "$EXTRAS" ]; then
     echo ""
 fi
 
+# Persist the published image tag (--tag) into deploy/.env (idempotent upsert) so
+# every ${COMPOSE} call below pulls the same tag, and later redeploys stay pinned
+# to it. Absent --tag, the compose default (PRECIS_MCP_TAG) applies.
+if [ -n "$MCP_TAG" ]; then
+    ssh "$SERVER" "
+        set -euo pipefail
+        cd ${REMOTE_DIR}
+        umask 077
+        if grep -q '^PRECIS_MCP_TAG=' deploy/.env; then
+            sed -i 's|^PRECIS_MCP_TAG=.*|PRECIS_MCP_TAG=${MCP_TAG}|' deploy/.env
+        else
+            echo 'PRECIS_MCP_TAG=${MCP_TAG}' >> deploy/.env
+        fi
+    "
+    echo "  set PRECIS_MCP_TAG=${MCP_TAG} in deploy/.env (pulls ghcr.io/precis-finance/precis-mcp:${MCP_TAG})"
+    echo ""
+fi
+
 # ── 3. Provision ClickHouse (mode-gated; runs before the auth/server phase) ──
 # bundle-sample runs the sample-data generator (which creates its mock-source
 # DB and applies the platform migrations itself); byo / bundle-empty run the
@@ -274,12 +327,21 @@ if [ -n "$DATA_MODE" ]; then
     ssh "$SERVER" "
         set -euo pipefail
         cd ${REMOTE_DIR}
-        ${COMPOSE} build precis-mcp
+        # Get the app image the provisioning one-shots will run: pull the
+        # published tag by default, or build from source on --build.
+        $($DO_BUILD && echo "${COMPOSE} build precis-mcp" || echo "${COMPOSE} pull precis-mcp")
         case '${DATA_MODE}' in
           bundle-sample)
             ${COMPOSE} up -d postgres clickhouse
             for _ in \$(seq 1 30); do
                 ${COMPOSE} exec -T postgres pg_isready -U precis >/dev/null 2>&1 && break
+                sleep 2
+            done
+            # The generator targets ClickHouse too — wait for its first-boot to
+            # finish (slower than Postgres on a fresh pull) or sample_data races
+            # ahead and hits 'connection refused' on :8123.
+            for _ in \$(seq 1 30); do
+                ${COMPOSE} exec -T clickhouse wget -qO- http://localhost:8123/ping >/dev/null 2>&1 && break
                 sleep 2
             done
             # Generate in Postgres → trigger ingestion → apply semantic.* views.
@@ -343,7 +405,10 @@ ssh "$SERVER" "
             exit 1
         }
     fi
-    $($DO_BUILD && echo "${COMPOSE} up -d --build" || echo "${COMPOSE} up -d")
+    # Build from source on --build; otherwise pull the published tag explicitly
+    # (so a stale locally-built image of the same tag can't shadow the release)
+    # and bring the stack up without building.
+    $($DO_BUILD && echo "${COMPOSE} up -d --build" || echo "${COMPOSE} pull precis-mcp && ${COMPOSE} up -d")
     ${COMPOSE} ps
 "
 echo ""

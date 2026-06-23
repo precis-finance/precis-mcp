@@ -15,10 +15,16 @@ you have.
         Rolling back an upgrade means restoring the pre-upgrade bundle. You
         have a one-command chain — [`backup run`](backups.md). An upgrade
         you can't roll back from is a bet, not a procedure.
-2. **Pull the new code** — `git pull` on the deployment checkout, or
-   `scripts/deploy-mcp.sh` from your workstation (it rsyncs the tree to the
-   box and rebuilds there).
-3. **Bring the stack up:**
+2. **Take the new version.** Two paths, matching how you deploy:
+   - *Pinned release (the default):* set `PRECIS_MCP_TAG` to the new version and
+     re-pull (see [Pinned-release mode](#pinned-release-mode-pull-instead-of-build)
+     below), or `scripts/deploy-mcp.sh --tag <version>` from your workstation —
+     it pulls the published image, no rebuild.
+   - *Rolling `main` / fork:* `git pull` on the deployment checkout, or
+     `scripts/deploy-mcp.sh --build` from your workstation (it rsyncs the tree
+     to the box and builds there).
+3. **Bring the stack up** (the rolling-`main` / build path; the pinned-release
+   path uses `up -d` without `--build`):
 
    ```bash
    docker compose -f deploy/docker-compose.yml up -d --build

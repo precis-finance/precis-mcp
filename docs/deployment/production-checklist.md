@@ -60,10 +60,14 @@ bash scripts/deploy-mcp.sh --server YOUR_HOST \
   --data-mode bundle-empty --auth-mode keycloak
 ```
 
-This rsyncs the tree, builds the image, and brings up the stack (server +
-the bundled dependencies your axes selected). Add `--extras bigquery`
-(or `snowflake`/`mssql`/`databricks`) to bake a warehouse driver into the
-image for a `byo` warehouse.
+This rsyncs the tree, **pulls the published release image**
+(`ghcr.io/precis-finance/precis-mcp`), and brings up the stack (server + the
+bundled dependencies your axes selected). Pulling a pinned release is the
+default first-run path; pin a specific version with `--tag <version>` (it sets
+`PRECIS_MCP_TAG`). Build from source instead — for tracking rolling `main`, a
+fork, or baking warehouse drivers — with `--build`; `--extras bigquery` (or
+`snowflake`/`mssql`/`databricks`) implies `--build`, since the published image
+ships without warehouse drivers.
 
 **Guards against:** hand-assembling `docker compose` invocations and missing a
 profile — the script selects the right profiles for your three axes.
