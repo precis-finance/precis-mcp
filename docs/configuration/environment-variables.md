@@ -47,6 +47,20 @@ by the server process itself.
 | `CHSECURE` | `false` | TLS on the ClickHouse link (flips the default port to 8443). |
 | `CHCACERT` | unset | CA certificate path to pin (with `CHSECURE`). |
 | `CHVERIFY` | unset | Set `false` to accept a self-signed dev certificate. |
+| `PRECIS_CLICKHOUSE_POOL_MAXSIZE` | `32` | Per-host size of the shared ClickHouse HTTP connection pool. Set it at or above `PRECIS_MAX_CONCURRENT_READS_GLOBAL` so the read-concurrency cap, not pool exhaustion, is what bounds a query burst. |
+
+## Read concurrency (the `/mcp` read path)
+
+In-process caps that keep a fan-out of read-tool calls — e.g. an Excel workbook
+recalculating many `PRECIS.*` cells at once — from flooding ClickHouse. The caps
+are per server process; a request that can't get a slot within the wait gets a
+retryable "busy" tool error.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `PRECIS_MAX_CONCURRENT_READS_PER_USER` | `6` | Max in-flight read-tool calls for any one user. The working control — contains a single client's burst and stops one user starving others. |
+| `PRECIS_MAX_CONCURRENT_READS_GLOBAL` | `32` | Max in-flight read-tool calls across all users. A box guard; keep it at or below the ClickHouse pool size. |
+| `PRECIS_READ_SLOT_WAIT_SECONDS` | `3` | How long a call waits for a free slot before returning the retryable busy error. |
 
 ## PostgreSQL (platform state — multi-user bundle only)
 
@@ -108,10 +122,27 @@ Set `PRECIS_AUTH_MODE=oidc` and drop `bundled-keycloak` from
 | Variable | Default | Purpose |
 |---|---|---|
 | `OIDC_ISSUER` | unset | Your IdP's issuer URL. Required in mode C. |
-| `OIDC_JWKS_URL` | from issuer discovery | Override only if not discoverable. |
+| `OIDC_JWKS_URL` | unset | JWKS endpoint for your IdP's issuer. Required in mode C. |
 | `OIDC_AUDIENCE` | `${PRECIS_BASE_URL}/mcp` | Audience the `/mcp` resource requires, verbatim. |
 | `OIDC_CLIENT_ID` | unset | Your pre-registered client. |
 | `OIDC_CLIENT_SECRET` | unset | Client secret for confidential clients. **Secret.** |
+
+## Excel add-in (optional)
+
+The Excel add-in is a separate **public** OAuth client (PKCE, no secret) of the
+`/mcp` endpoint. These knobs are advertised in the `/mcp` host's
+protected-resource metadata so the add-in auto-configures from the `/mcp` URL
+alone — leave them all unset and the add-in surface is simply off. The two
+token-shape knobs are independent; set them to match your IdP (see
+[external IdP recipes](../deployment/external-idp-recipes.md)).
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `KC_ENABLE_EXCEL_ADDIN` | unset | **Mode B:** set `true` to provision and advertise the bundled-Keycloak `precis-excel-addin` public client (the realm reconcile creates it; absence deletes it). |
+| `EXCEL_ADDIN_CLIENT_ID` | unset | **Mode C:** the public client_id you registered in your external IdP for the add-in. Wins over the mode-B default when set. |
+| `EXCEL_ADDIN_SCOPE` | `openid` | Exact scope the add-in requests (RFC 9728 `scopes_supported`). Keep the default for an IdP that binds the audience via the resource indicator (Keycloak/Auth0/Ping). For an IdP that binds it via a scope (Entra/Okta), set the full request scope, e.g. `openid profile email offline_access api://<app-id>/access_as_user` (include `offline_access` so the add-in gets a refresh token, and `profile email` so the task pane can show the signed-in user's name/email instead of an opaque subject id). |
+| `EXCEL_ADDIN_RESOURCE_INDICATOR` | `true` | Whether the add-in sends the RFC 8707 `resource` parameter. Leave `true` for the MCP-conformant shape; set `false` for an AS that rejects it (Entra's v2 endpoint returns `AADSTS901002`). |
+| `EXCEL_ADDIN_DIST_DIR` | `excel-addin/dist` | Directory of the built add-in bundle the server hosts at `/excel` (with a host-templated manifest at `/excel/manifest.xml`). The published image bakes this directory during the Docker build. Override only when serving a separately built bundle. When the add-in is enabled and this directory exists, the server serves the bundle same-origin with `/mcp`, so no `/mcp` `CORS_ORIGINS` entry is needed. |
 
 ## Your model
 
@@ -121,6 +152,7 @@ Set `PRECIS_AUTH_MODE=oidc` and drop `bundled-keycloak` from
 | `PRECIS_INTEGRATIONS_ROOT` | `instance/integrations` | Override for the integrations registry root alone. |
 | `COMPANY_NAME` | `your organisation` | Name woven into the MCP instructions served to clients. |
 | `INSPECTION_ROW_CAP` | `10000` | Hard cap on rows returned by row-level inspection. |
+| `USER_DATA_DIR` | `/data/users` | Per-user file storage root. The Compose bundle mounts a persistent `user_data` named volume here; only advanced bind-mount deployments need to manage host-path ownership. |
 
 ## Ingestion
 

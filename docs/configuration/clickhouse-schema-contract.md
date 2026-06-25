@@ -91,7 +91,34 @@ exist here as a real view. The provisioner creates them; `--check` confirms it.
 A **scenario** identifies which dataset a number comes from — actuals, a budget, a
 forecast. The engine loads the list of valid scenarios from one table,
 `semantic.scenarios`, at startup. Unlike the views, this table's *shape* is fixed
-by the platform; you supply its *rows* in `instance/scenarios.yml`:
+by the platform — its DDL is package-owned and identical in every deployment:
+
+```sql
+CREATE TABLE IF NOT EXISTS semantic.scenarios (
+    scenario_id     String,
+    alias           String,
+    name            String,
+    base_scenario   Nullable(String),
+    status          String,
+    description     String,
+    created_by      String,
+    created_at      DateTime,
+    locked_at       Nullable(DateTime),
+    horizon_start   String         DEFAULT '',
+    horizon_end     String         DEFAULT '',
+    actuals_cutoff  Nullable(String),
+    granularity     String         DEFAULT 'monthly',
+    owner_user_id   String         DEFAULT '',
+    updated_at      DateTime       DEFAULT now(),
+    variant_of      Nullable(String),
+    locks           String         DEFAULT '[]',
+    kind            LowCardinality(String)
+) ENGINE = MergeTree()
+ORDER BY scenario_id
+```
+
+You don't hand-write this — the provisioner creates the table and seeds its
+*rows* from `instance/scenarios.yml`:
 
 ```yaml
 # instance/scenarios.yml
@@ -107,12 +134,55 @@ scenarios:
     base_scenario: ACTUALS
 ```
 
-Required per scenario: `scenario_id`, `alias` (the short key clients use), `name`,
-`kind`. Everything else (status, horizon, description, …) is optional with sane
-defaults. At minimum, declare the scenario your actuals live under.
+You declare the four required fields per scenario; every other column takes its
+declared value or a default:
 
-The provisioner reads this file and **seeds only the scenarios that aren't already
-there** — so re-running never overwrites a scenario whose state has since changed.
+| Column | Required | Default | Purpose |
+|---|---|---|---|
+| `scenario_id` | yes | — | the identifier carried in your fact data's `scenario` column |
+| `alias` | yes | — | the short key clients pass (`actuals`, `budget`) |
+| `name` | yes | — | display label |
+| `kind` | yes | — | `ACTUAL` / `BUDGET` / `FORECAST` … — drives actuals-vs-plan semantics |
+| `base_scenario` | no | `null` | the scenario this one was derived from |
+| `status` | no | `DRAFT` | lifecycle state (mutated at runtime by the platform) |
+| `description` | no | `''` | free text |
+| `horizon_start` / `horizon_end` | no | `''` | the period range the scenario covers, `YYYY-MM` |
+| `actuals_cutoff` | no | `null` | last actuals period for a forecast that splices actuals + plan |
+| `granularity` | no | `monthly` | period grain |
+| `variant_of` | no | `null` | parent scenario for what-if variants |
+| `owner_user_id`, `created_by`, `created_at`, `updated_at`, `locked_at`, `locks` | no | system-managed | ownership / audit / locking — set by the platform, not normally seeded |
+
+At minimum, declare the scenario your actuals live under.
+
+!!! warning "The `scenario` column must match a registered `scenario_id`"
+    The registry is the source of truth for *which* scenarios exist; your fact
+    data supplies the *rows* for them. The `scenario` column value in every
+    `live.*` fact — and in the semantic view that unions them — must equal a
+    `scenario_id` in this table. A scenario value present in the data but absent
+    from the registry is **not** exposed by the engine; a registry row with no
+    matching data returns empty. The preflight confirms the table exists and is
+    non-empty, but it does **not** cross-check values against your facts.
+
+The provisioner reads `scenarios.yml` and **seeds only the scenarios that aren't
+already there** (seed-if-absent), so re-running never overwrites a scenario whose
+state the platform has since changed (status, locks, variants).
+
+!!! note "Editing or adding a scenario"
+    Because seeding is seed-if-absent, **editing a row in `scenarios.yml` and
+    re-running does nothing** to a `scenario_id` already present. To change a
+    seeded scenario's metadata, edit the row in ClickHouse directly, or
+    `ALTER TABLE semantic.scenarios DELETE WHERE scenario_id = '…'` and re-run.
+    Adding a *new* scenario (a 2027 budget, a forecast) is the normal path: add
+    its row to `scenarios.yml`, re-run the provisioner, and load fact data
+    carrying its `scenario_id`.
+
+### Bringing your own ClickHouse
+
+The table is package-owned, so the simplest BYO path is still to let the
+provisioner create and seed it (`python -m precis_mcp.clickhouse_init --scope
+open`). If you provision the registry yourself instead, create it with **exactly**
+the DDL above — column names, order, and types are a contract the loader reads by
+name — and insert at least one row, then confirm with `--check`.
 
 ---
 

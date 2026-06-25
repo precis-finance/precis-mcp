@@ -24,3 +24,9 @@ secrets/
 build/
 dist/
 *.egg-info/
+
+# Frontend build artefacts. The open Dockerfile builds the Excel add-in from
+# source in a Node stage, then copies only dist/ into the final runtime image.
+node_modules/
+excel-addin/node_modules/
+excel-addin/dist/

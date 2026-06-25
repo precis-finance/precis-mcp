@@ -107,6 +107,7 @@ mode-C surface, public connectors included.
 ```bash
 PRECIS_AUTH_MODE=oidc
 OIDC_ISSUER=https://<tenant>.auth0.com/      # keep the trailing slash — used verbatim
+OIDC_JWKS_URL=https://<tenant>.auth0.com/.well-known/jwks.json
 OIDC_AUDIENCE=<api-identifier>               # the API Identifier from step 1
 OIDC_CLIENT_ID=<pre-registered-client-id>    # for static clients; DCR clients bring their own
 PRECIS_IDENTITY_CLAIM=https://precis/precis_user_id
@@ -151,6 +152,7 @@ Claude Code with a configured client id).
 ```bash
 PRECIS_AUTH_MODE=oidc
 OIDC_ISSUER=https://<org>.okta.com/oauth2/<authServerId>
+OIDC_JWKS_URL=https://<org>.okta.com/oauth2/<authServerId>/v1/keys
 OIDC_AUDIENCE=<custom-AS-audience>           # the static Audience from step 2
 OIDC_CLIENT_ID=<pre-registered-client-id>
 PRECIS_IDENTITY_CLAIM=precis_user_id         # the claim name from step 3
@@ -199,6 +201,7 @@ is the mode-C path for pre-registered clients.
 ```bash
 PRECIS_AUTH_MODE=oidc
 OIDC_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0
+OIDC_JWKS_URL=https://login.microsoftonline.com/<tenant-id>/discovery/v2.0/keys
 OIDC_AUDIENCE=<api-app-client-id-guid>       # v2 tokens
 OIDC_CLIENT_ID=<client-app-id>
 PRECIS_IDENTITY_CLAIM=oid
@@ -246,6 +249,7 @@ through [brokering](keycloak-brokering.md).
 ```bash
 PRECIS_AUTH_MODE=oidc
 OIDC_ISSUER=https://<pingfederate-host>
+OIDC_JWKS_URL=https://<pingfederate-host>/pf/JWKS
 OIDC_AUDIENCE=<resource-uri-from-the-ATM>
 OIDC_CLIENT_ID=<pre-registered-client-id>    # for static clients; DCR clients bring their own
 PRECIS_IDENTITY_CLAIM=precis_user_id
@@ -283,6 +287,49 @@ RFC 9728 discovery path above and never touch it.
 client_id, so against a no-DCR IdP they are unsupported in mode C; use
 **mode B** instead ([Keycloak brokering](keycloak-brokering.md) supplies
 DCR).
+
+### 3.5.1 Excel add-in against a no-DCR IdP (Entra / Okta direct)
+
+The Excel add-in is a **pre-registered public client**, so the DCR gap that
+blocks claude.ai/ChatGPT does not apply to it — it can connect to a no-DCR IdP
+in mode C directly. It also handles the second gap (Okta/Entra not honouring the
+RFC 8707 `resource` parameter) by reading its token-request shape from the
+`/mcp` host's protected-resource metadata, so you configure the shape on the
+server and the add-in follows it.
+
+1. **Register a public client** (Authorization Code + PKCE, no secret) in your
+   IdP for the add-in, separate from the SPA's client. Set its redirect URI to
+   the server-hosted add-in callback
+   (`https://<your-instance>/excel/auth-callback.html`) and allow the hosted
+   Précis origin (`https://<your-instance>`) wherever the IdP requires a web
+   origin for browser PKCE token exchange. On **Entra**, register the callback
+   under the **Single-page application** platform, not **Web** — the add-in
+   redeems the code with a browser `fetch`, and Entra only enables cross-origin
+   token redemption for SPA-typed redirect URIs (a Web-typed URI clears the
+   `AADSTS50011` redirect-mismatch error but then fails with `AADSTS9002326`).
+2. **Point the `/mcp` host at it** — set `EXCEL_ADDIN_CLIENT_ID` to that
+   client_id.
+3. **Advertise the token shape** for an IdP that binds the audience via a scope
+   rather than `resource` (Entra, Okta):
+
+   ```bash
+   EXCEL_ADDIN_CLIENT_ID=<the public client_id>
+   EXCEL_ADDIN_SCOPE="openid profile email offline_access api://<api-app-id>/access_as_user"
+   EXCEL_ADDIN_RESOURCE_INDICATOR=false
+   ```
+
+   The add-in then requests exactly that scope and omits `resource`. For an IdP
+   that does honour `resource` (Auth0 with the compatibility profile, Ping),
+   leave both knobs unset — the add-in keeps the default RFC 8707 shape.
+4. **The `/mcp` audience check is unchanged.** The token's `aud` must still
+   match `OIDC_AUDIENCE`; with Entra that is the API app's client-ID GUID, set
+   by the `api://…/access_as_user` scope above.
+
+Include `offline_access` in the scope so the add-in receives a refresh token —
+Entra issues one only when that scope is explicitly requested — and `profile
+email` so the id_token carries the user's name/email and the task pane shows the
+signed-in user rather than the opaque subject id. The add-in keeps the token in
+session memory only; it is never written to the workbook or disk.
 
 ## 4. Choosing the identity claim
 

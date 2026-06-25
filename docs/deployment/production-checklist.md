@@ -44,6 +44,9 @@ their secrets:
   for `PRECIS_DOMAIN` — needs public DNS + ACME reachability) or `byo` (front
   the loopback-published ports with your own proxy; reference vhost in
   `deploy/nginx/`).
+- **Excel add-in** (optional): set `KC_ENABLE_EXCEL_ADDIN=true` in mode B, or
+  `EXCEL_ADDIN_CLIENT_ID` plus any IdP-specific token-shape vars in mode C. The
+  bundle is baked into the image and served from `/excel`.
 
 Secrets follow the `*_FILE` convention (a path to a mounted file) or plain env
 vars — see the [environment variable reference](../configuration/environment-variables.md)
@@ -123,6 +126,11 @@ curl -fsS https://YOUR_DOMAIN/readyz        # 200 + {"status":"ready"} when CH +
 
 Then, as a signed-in user: list scenarios, run one metric, and confirm
 `admin_cli show-access --user <id>` resolves the access you intended.
+
+If you enabled the Excel add-in, also fetch
+`https://YOUR_DOMAIN/excel/manifest.xml` and confirm it contains your instance
+origin, not `localhost`; then upload that manifest in Excel and run
+`=PRECIS.SCENARIOS()`.
 
 **Guards against:** announcing a server that returns `503` from `/readyz`
 (a dependency is unreachable) or serves figures the permission model wasn't

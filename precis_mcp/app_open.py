@@ -35,6 +35,7 @@ from fastapi.responses import JSONResponse
 
 from precis_mcp.auth_mode import resolve_for_multiuser
 from precis_mcp.mcp_external.discovery import router as discovery_router
+from precis_mcp.mcp_external.excel_static import router as excel_static_router
 from precis_mcp.mcp_external.oauth_proxy import router as oauth_proxy_router
 from precis_mcp.mcp_external.server import router as mcp_router
 
@@ -122,3 +123,6 @@ def readyz() -> JSONResponse:
 app.include_router(mcp_router)
 app.include_router(discovery_router)
 app.include_router(oauth_proxy_router)
+# Excel add-in bundle + host-templated manifest at /excel — self-gates on the
+# add-in being enabled and the bundle being present (404 otherwise).
+app.include_router(excel_static_router)

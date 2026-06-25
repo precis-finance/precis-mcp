@@ -15,6 +15,12 @@ tools over Streamable HTTP. Every tool is **read-only**.
 - **Errors are data.** Tools don't raise; failures return
   `{"error": "...", "error_type": "..."}` so the calling model can read the
   message and correct itself.
+- **Concurrency is bounded.** A burst of read calls — e.g. a spreadsheet
+  recalculating many cells at once — is capped per user (and globally) so it
+  can't overload the read layer. Over the cap, a call returns a retryable
+  "busy" tool error rather than queueing indefinitely; retry shortly. A
+  well-behaved client keeps its own in-flight requests below the cap and never
+  sees it. See the [concurrency caps](../configuration/environment-variables.md#read-concurrency-the-mcp-read-path).
 - **Results arrive on both channels.** The JSON result is returned as
   `structuredContent` and as JSON text in `content` — a client without
   widget support loses nothing but the rendering.

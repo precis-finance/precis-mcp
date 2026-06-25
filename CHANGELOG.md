@@ -9,6 +9,54 @@ my client integration?"*
      ritual (scripts/publish_open.py); move them under a dated heading when
      the sync is pushed to the mirror. -->
 
+## [0.2.0] - 2026-06-25
+
+Adds the **read-only Excel add-in** as an open feature, served by the published
+image at `/excel`. No client-integration break — the `/mcp` read tools and their
+response shapes are unchanged, and the add-in stays off until you enable it. One
+compose change matters if you bring your own `instance/`: the single-user local
+bundle now defaults to the image's baked-in demo instance; mount your own model
+through the new `docker-compose.instance.yml` overlay (see **Changed**).
+
+### Added
+
+- **Excel add-in (read-only).** A Microsoft Excel add-in that brings live
+  statements and metrics into the grid as `PRECIS.*` custom functions
+  (`STATEMENT`, `METRIC`, `HIERARCHY`, `KPIS`, `SCENARIOS`), with **Format** and
+  **Refresh** ribbon actions. It is an OAuth/MCP client of your own instance's
+  `/mcp` endpoint — no separate account, and figures never leave your instance.
+  The published image ships the built bundle and serves it at `/excel`; those
+  static assets carry app-owned security headers (open CORS, framable CSP) so
+  Office can host the task pane. Works in the bundled-Keycloak (including
+  brokered) and direct-external-OIDC identity modes; dev-key mode is not
+  supported. See [Précis for Excel](docs/excel/index.md).
+- **Add-in OAuth client provisioning.** `EXCEL_ADDIN_ENABLED` gates the `/excel`
+  surface. Bundled Keycloak: `KC_ENABLE_EXCEL_ADDIN` + `KC_ADDIN_REDIRECT_URIS`
+  reconcile a gated public `precis-excel-addin` client (deleted again when the
+  flag is off). External OIDC: `EXCEL_ADDIN_CLIENT_ID`, plus `EXCEL_ADDIN_SCOPE`
+  and `EXCEL_ADDIN_RESOURCE_INDICATOR` for IdPs that bind the audience via a
+  scope rather than the `resource` parameter. `EXCEL_ADDIN_DIST_DIR` overrides
+  the served bundle directory.
+- **Read-path concurrency caps.** Two semaphores bound the read path so a
+  workbook refresh (one tool call per cell) cannot swamp ClickHouse:
+  `PRECIS_MAX_CONCURRENT_READS_PER_USER` (per principal) and
+  `PRECIS_MAX_CONCURRENT_READS_GLOBAL` (process-wide).
+- **Package-only single-user quickstart.** `docker-compose.local.yml` pulls the
+  published image and serves its baked-in demo instance with no instance mount,
+  so first run needs no source checkout — download one compose file and bring
+  the stack up.
+
+### Changed
+
+- **`deploy-mcp.sh` pulls the published image by default.** Building from source
+  is now opt-in (`--build`, `--tag`, or `--extras`, which implies `--build`); the
+  driver also waits for ClickHouse readiness before generating the sample
+  bundle. Existing build workflows are unaffected via `--build`.
+- **Bring-your-own `instance/` on the local bundle moves to an overlay.** The
+  single-user `docker-compose.local.yml` now defaults to the image's demo
+  instance with no mount. To run your own model, add the new
+  `docker-compose.instance.yml` overlay, which bind-mounts your `instance/`.
+
 ## [0.1.1] - 2026-06-20
 
 First release published as a container image. Beyond the published image and

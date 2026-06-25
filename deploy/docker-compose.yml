@@ -125,7 +125,7 @@ x-precis-env: &precis-env
 # release — bump it with each release, or override to a digest for re-pull
 # immutability matching the upstream-image policy below.
 x-precis-image: &precis-image
-  image: ghcr.io/precis-finance/precis-mcp:${PRECIS_MCP_TAG:-0.1.1}
+  image: ghcr.io/precis-finance/precis-mcp:${PRECIS_MCP_TAG:-0.2.0}
   build:
     context: ..
     dockerfile: Dockerfile
@@ -272,6 +272,8 @@ services:
       PRECIS_BASE_URL: ${PRECIS_BASE_URL:-}
       KC_MCP_AUDIENCE: ${KC_MCP_AUDIENCE:-}
       KC_REALM: ${KC_REALM:-precis}
+      KC_ENABLE_EXCEL_ADDIN: ${KC_ENABLE_EXCEL_ADDIN:-}
+      KC_ADDIN_REDIRECT_URIS: ${KC_ADDIN_REDIRECT_URIS:-}
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD in deploy/.env}
     depends_on:
@@ -331,6 +333,12 @@ services:
       OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
       PRECIS_IDENTITY_CLAIM: ${PRECIS_IDENTITY_CLAIM:-}
       PRECIS_IDENTITY_COLUMN: ${PRECIS_IDENTITY_COLUMN:-}
+      # Excel add-in: bundle is baked into the image and served at /excel when
+      # one of these identity gates is set.
+      KC_ENABLE_EXCEL_ADDIN: ${KC_ENABLE_EXCEL_ADDIN:-}
+      EXCEL_ADDIN_CLIENT_ID: ${EXCEL_ADDIN_CLIENT_ID:-}
+      EXCEL_ADDIN_SCOPE: ${EXCEL_ADDIN_SCOPE:-}
+      EXCEL_ADDIN_RESOURCE_INDICATOR: ${EXCEL_ADDIN_RESOURCE_INDICATOR:-}
       # Platform DB (load_permissions) + ClickHouse read layer + source
       # credentials — the shared x-precis-env block at the top of this file.
       # Point CHHOST at your own ClickHouse when running without
@@ -339,6 +347,7 @@ services:
     volumes:
       - ${PRECIS_INSTANCE_DIR:-../instance}:/app/instance:ro
       - ingest_dropbox:/data/ingest
+      - user_data:/data/users
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8769/health').status==200 else 1)\""]
       interval: 15s
@@ -491,6 +500,7 @@ volumes:
   clickhouse_data:
   backups:
   ingest_dropbox:
+  user_data:
   # Caddy's ACME state (certificates, account keys). Losing it forces
   # re-issuance and can hit Let's Encrypt rate limits — keep it persistent.
   caddy_data:

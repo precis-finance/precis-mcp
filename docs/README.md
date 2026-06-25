@@ -49,6 +49,7 @@ model; it serves the queries.
 | Expose a secure multi-user server (bundled Keycloak or your own OIDC IdP) | [Remote access — sign-in & identity modes](deployment/oauth-keycloak.md) |
 | Sign in with your corporate IdP (SSO) through the bundled Keycloak | [Keycloak brokering](deployment/keycloak-brokering.md) |
 | Connect Auth0 / Okta / Entra / Ping directly | [External IdP recipes](deployment/external-idp-recipes.md) |
+| Use live read-only functions in Excel | [Précis for Excel](excel/index.md) |
 | Run against bundled or your own ClickHouse (and provision it) | [ClickHouse data modes](deployment/clickhouse-data-modes.md) |
 | Describe your own metrics and statements | [Catalogue & semantic model](configuration/catalogue-and-semantic.md) |
 | Know what your ClickHouse must contain | [ClickHouse schema contract](configuration/clickhouse-schema-contract.md) |

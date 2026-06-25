@@ -84,6 +84,17 @@ nothing else to register.
   for rates). Complex business logic belongs in the semantic view or in a
   derived metric, not in an ad hoc metric expression.
 
+- **`variance_effect` sets variance colour polarity.** A comparison column
+  (`actuals_vs_budget`, `actuals_vs_actuals_py`, …) is colour-coded
+  favourable/unfavourable, and the sign that counts as *favourable* comes from
+  the metric, not the scenario. `variance_effect: natural` (the default) treats a
+  **positive** delta as favourable/green — revenue up is good; `inverse` treats a
+  positive delta as unfavourable/red — cost up is bad; `neutral` disables the
+  colour. Set `inverse` on every cost/expense metric, or its variances are
+  coloured backwards. The same signal drives the colour in the React UI, the
+  Excel add-in's **Format**, and exported workbooks
+  (`precis_mcp/cell_format.py::favorability` is the one source of truth).
+
 - **`where:` is the only row-filter grammar.** It is a list of structured
   predicates, ANDed together, that compiles to both ClickHouse SQL and Ibis.
   A raw-SQL filter string is rejected at load time with a `CatalogueError`.

@@ -17,6 +17,12 @@
 # `--build-arg PRECIS_EXTRAS=...`; the build path stays in compose for that.
 # amd64 only for now (servers are amd64; the local compose builds natively on
 # other arches) — add linux/arm64 here once the image is proven.
+#
+# After the image push, a second job publishes a GitHub Release for the tag,
+# with the body taken verbatim from that version's CHANGELOG.md section.
+# CHANGELOG.md is the single narrative — the release notes are derived from it,
+# never hand-written. A prerelease tag (v*-rc.N) has no changelog section, so it
+# is marked prerelease and gets GitHub's auto-generated notes instead.
 name: release
 
 on:
@@ -24,7 +30,7 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: read
+  contents: write   # the release job creates a GitHub Release for the tag
   packages: write
 
 concurrency:
@@ -64,3 +70,37 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+  release:
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Publish GitHub Release from CHANGELOG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="${TAG#v}"
+          # Prerelease tag (v0.2.0-rc.1): no CHANGELOG section exists yet, and it
+          # must not become the newest release — mark it and use GitHub's notes.
+          if [[ "$version" == *-* ]]; then
+            gh release create "$TAG" --title "$TAG" --prerelease --generate-notes
+            exit 0
+          fi
+          # Extract this version's section: the lines between its `## [x.y.z]`
+          # heading and the next `## [` heading. index()==1 matches the literal
+          # heading prefix, so the dots in the version aren't read as regex.
+          awk -v hdr="## [$version]" '
+            index($0, hdr) == 1 { flag = 1; next }
+            flag && /^## \[/    { exit }
+            flag                { print }
+          ' CHANGELOG.md > notes.md
+          # Never publish a real release bodyless: fall back to auto notes if the
+          # section is missing or blank (a forgotten CHANGELOG close).
+          if grep -q '[^[:space:]]' notes.md; then
+            gh release create "$TAG" --title "precis-mcp $version" --notes-file notes.md
+          else
+            echo "::warning::no CHANGELOG section for $version — using auto-generated notes"
+            gh release create "$TAG" --title "precis-mcp $version" --generate-notes
+          fi

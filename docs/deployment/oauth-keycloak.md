@@ -41,6 +41,8 @@ by hand.
 | `KC_BOOTSTRAP_ADMIN_PASSWORD` | Keycloak realm-admin password | — |
 | `KC_REALM` / `KC_CLIENT_ID` | Realm + client | `precis` / `precis-spa` |
 | `KC_MCP_AUDIENCE` | Expected token audience on `/mcp` | derived from `PRECIS_BASE_URL` |
+| `KC_ENABLE_EXCEL_ADDIN` | Provision and advertise the hosted Excel add-in public client | unset |
+| `KC_ADDIN_REDIRECT_URIS` | Optional override for the add-in callback URI | derived from `PRECIS_BASE_URL` |
 
 Bring it up:
 
@@ -60,6 +62,13 @@ above doesn't change; the walkthrough is
 path for **claude.ai / ChatGPT**: their connectors self-register (DCR), which
 the bundled Keycloak supports.
 
+To enable the hosted Excel add-in in mode B, set `KC_ENABLE_EXCEL_ADDIN=true`
+before the Keycloak reconcile runs. The default callback is
+`https://<your-host>/excel/auth-callback.html`; set `KC_ADDIN_REDIRECT_URIS`
+only when your ingress needs a non-standard public origin. The add-in bundle is
+baked into the published image and served at `/excel`; see
+[Précis for Excel](../excel/index.md).
+
 ## Mode C — your own OIDC IdP (`PRECIS_AUTH_MODE=oidc`)
 
 No Keycloak runs. The verifier points straight at your IdP. Register a client in
@@ -69,11 +78,13 @@ your IdP and tell Précis-MCP about the issuer:
 |---|---|
 | `PRECIS_AUTH_MODE` | `oidc` |
 | `OIDC_ISSUER` | Your IdP's issuer URL (used verbatim — keep any trailing slash) |
-| `OIDC_JWKS_URL` | JWKS endpoint, if not derivable from the issuer's discovery |
+| `OIDC_JWKS_URL` | JWKS endpoint for the issuer. Required in mode C. |
 | `OIDC_AUDIENCE` | The audience your IdP stamps for the `/mcp` resource |
 | `OIDC_CLIENT_ID` / `OIDC_CLIENT_SECRET` | Your pre-registered client (secret only if confidential) |
 | `PRECIS_IDENTITY_CLAIM` | Which token claim carries identity (default `precis_user_id`) |
 | `PRECIS_IDENTITY_COLUMN` | `id` (the claim value *is* the user id) or `external_id` (look it up) |
+| `EXCEL_ADDIN_CLIENT_ID` | Optional public PKCE client_id for the hosted Excel add-in |
+| `EXCEL_ADDIN_SCOPE` / `EXCEL_ADDIN_RESOURCE_INDICATOR` | Optional token-request shape for IdPs such as Entra/Okta |
 
 Two things to know:
 
@@ -86,6 +97,12 @@ Two things to know:
   claim (e.g. an immutable subject / `oid`), not a mutable email. If it differs
   from your Précis-MCP user ids, set `PRECIS_IDENTITY_COLUMN=external_id` and
   store the IdP value with `create-user --external-id` (below).
+- **Excel add-in uses a separate public client.** If you enable the hosted Excel
+  add-in in mode C, register a public PKCE client in your IdP with callback
+  `https://<your-host>/excel/auth-callback.html`, then set
+  `EXCEL_ADDIN_CLIENT_ID` on the `/mcp` host. Entra/Okta usually also need
+  `EXCEL_ADDIN_SCOPE` and `EXCEL_ADDIN_RESOURCE_INDICATOR=false`; see
+  [External IdP recipes](external-idp-recipes.md#351-excel-add-in-against-a-no-dcr-idp-entra--okta-direct).
 
 ## Create the first admin and provision users
 

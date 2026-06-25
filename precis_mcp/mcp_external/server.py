@@ -22,6 +22,7 @@ from precis_mcp.auth import (
     clear_auth_context,
     clear_call_scope,
 )
+from precis_mcp.concurrency import TooBusy, read_limiter
 from precis_mcp.dispatch import (
     _make_agent_wrapper,
     build_descriptors,
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = "precis"
-SERVER_VERSION = "0.1.1"
+SERVER_VERSION = "0.2.0"
 
 # Synthetic, MCP-only tool whose *result* is the orientation block. The MCP
 # `instructions` field (initialize) is dropped by claude.ai and only partly read
@@ -403,7 +404,9 @@ def _render_financial_table(
     data: dict, tool_args: dict, auth_ctx: AuthContext,
 ) -> dict | None:
     caption = data.get("caption") if isinstance(data, dict) else None
-    return build_financial_table_block(data, caption=caption)
+    # The MCP render variant is the surface the Excel add-in consumes, so it
+    # carries the resolved `nf` / `alerts` enrichment (add-in spec §5).
+    return build_financial_table_block(data, caption=caption, for_excel=True)
 
 
 def _render_inspection_grid(
@@ -541,7 +544,25 @@ async def _handle_tools_call(params: dict, auth_ctx: AuthContext) -> dict:
                 cleaned.pop("out", None)
             _apply_presentation_defaults(name, cleaned, sig_params)
             try:
-                result = await asyncio.to_thread(wrapper, **cleaned)
+                # Bound concurrent read/engine work per user (and globally) so a
+                # workbook refresh fan-out can't flood ClickHouse. The slot wraps
+                # only the engine call, not the gate/render work around it.
+                async with read_limiter.acquire(auth_ctx.user_id):
+                    result = await asyncio.to_thread(wrapper, **cleaned)
+            except TooBusy as exc:
+                span.set_attribute("precis.is_error", True)
+                _audit_call(auth_ctx, name=mcp_name, out_mode=pinned_out,
+                            outcome="throttled", error=str(exc),
+                            scenario_id=scenario_id)
+                # Surfaced as a retryable tool error: the JSON-RPC envelope is
+                # always HTTP 200, so the busy signal rides in the result, not
+                # the status. The client's own concurrency gate normally keeps
+                # this from ever tripping — it's the backstop for a client that
+                # doesn't self-throttle.
+                return {
+                    "isError": True,
+                    "content": [{"type": "text", "text": str(exc)}],
+                }
             except Exception as exc:
                 logger.exception("MCP tool %s failed", mcp_name)
                 span.set_attribute("precis.is_error", True)

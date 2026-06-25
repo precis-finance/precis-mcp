@@ -6,14 +6,25 @@
 # there is the Précis import-linter config, not the open package metadata.
 #
 # Lean vs the Précis root Dockerfile: gcc only (psycopg2-binary build), no
-# LibreOffice (Excel is a Précis feature), the open dependency subset from the package
-# pyproject, and an open default CMD.
+# LibreOffice (server-side workbook generation is a Précis feature), the open
+# dependency subset from the package pyproject, and an open default CMD.
 #
 # Pinned to bookworm (not the floating python:3.12-slim, which now resolves to
 # trixie): the PGDG repo line below installs the bookworm-pgdg suite, and the
 # postgresql-client-16 it serves links libpq5/glibc built for bookworm. A
 # trixie userland makes that dependency unsatisfiable. Keep the codename here in
 # lockstep with the PGDG suite below.
+FROM node:20-bookworm-slim AS excel-addin-builder
+
+WORKDIR /build/excel-addin
+
+# Build the server-hosted Excel add-in bundle from source. Node/npm stay in this
+# builder stage; the final Python runtime image receives only dist/.
+COPY excel-addin/package.json excel-addin/package-lock.json ./
+RUN npm ci
+COPY excel-addin ./
+RUN npm run build
+
 FROM python:3.12-slim-bookworm
 
 WORKDIR /app
@@ -75,16 +86,22 @@ RUN if [ -n "$PRECIS_EXTRAS" ]; then \
 
 # The rest of the open tree: the demo instance fixture (baked as the default;
 # the compose mounts a deployer's own over /app/instance), deploy assets
-# (reconcile, nginx), and scripts (migrate.py). .dockerignore keeps it lean.
+# (reconcile, nginx), scripts (migrate.py), and the Excel add-in manifest
+# template. .dockerignore keeps it lean.
 COPY . .
 
-# Non-root runtime user. /data/ingest backs the ingest_dropbox volume (ours
-# alone). /backups is shared with the bundled ClickHouse server (uid 101), so
-# it is sticky-world-writable like /tmp — each writer owns its files; the
-# volume inherits these permissions when first initialised from this image.
+# Built Excel add-in bundle served at /excel by precis_mcp.mcp_external.excel_static.
+COPY --from=excel-addin-builder /build/excel-addin/dist ./excel-addin/dist
+
+# Non-root runtime user. /data/ingest backs the ingest_dropbox volume, and
+# /data/users backs the per-user file-store volume. /backups is shared with the
+# bundled ClickHouse server (uid 101), so it is sticky-world-writable like /tmp
+# — each writer owns its files; volumes inherit these permissions when first
+# initialised from this image.
 RUN groupadd -g 10001 precis \
     && useradd -u 10001 -g precis -m -d /home/precis precis \
-    && mkdir -p /data/ingest && chown precis:precis /data/ingest \
+    && mkdir -p /data/ingest /data/users \
+    && chown precis:precis /data/ingest /data/users \
     && mkdir -p /backups && chmod 1777 /backups
 ENV HOME=/home/precis
 USER precis

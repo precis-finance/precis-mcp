@@ -60,6 +60,9 @@ nav:
   - Getting started:
       - Quickstart (local, dev-key): getting-started/quickstart.md
       - How Précis-MCP works: getting-started/concepts.md
+  - Excel add-in:
+      - Overview & setup: excel/index.md
+      - Function reference: excel/functions.md
   - Deployment:
       - Production deployment checklist: deployment/production-checklist.md
       - Remote access — sign-in & identity modes: deployment/oauth-keycloak.md

@@ -456,8 +456,41 @@ table stem, so two dimensions sharing one table would collide.
 
 A **scenario** identifies which dataset a number comes from — actuals, a budget, a
 forecast. It's the `scenario` column in the fact view, and clients choose one (or
-compare two) at query time. You don't define scenarios in a catalogue file; the
-engine exposes whatever scenario values exist in your data.
+compare two) at query time.
+
+Scenarios are **not** defined in a catalogue file — but they are not implicit in
+your data either. The engine loads the set of valid scenarios from the
+`semantic.scenarios` registry at startup, seeded from `instance/scenarios.yml`.
+The registry and the data must agree on the identifier: the `scenario` column
+value in the fact view must equal a `scenario_id` in the registry, and a scenario
+value present in the data but absent from the registry is not exposed. See the
+`semantic.scenarios` section of
+[What your ClickHouse must contain](clickhouse-schema-contract.md) for the table
+shape and how to seed it.
+
+### Generated reporting scenarios
+
+On top of the real scenarios you seed, the engine generates a reporting
+vocabulary at runtime (`ScenarioRegistry`) — you do not declare or seed these:
+
+| Form | Key pattern | Meaning |
+|---|---|---|
+| **Period-shifted** | `<alias>_py`, `<alias>_pp` | the scenario shifted −12 months (prior year) or −1 month (prior period), e.g. `actuals_py` |
+| **Comparison** | `<left>_vs_<right>` | signed variance, `left − right`, e.g. `actuals_vs_budget` |
+| **Comparison %** | `<left>_vs_<right>_pct` | percentage variance vs the comparator |
+
+Comparison operands may be real or shifted, so year-on-year is just a comparison
+against a shifted scenario: `actuals_vs_actuals_py` (signed) and
+`actuals_vs_actuals_py_pct` (percentage). `prior_year` and `prior_period` are
+accepted as compatibility aliases for `actuals_py` and `actuals_pp`.
+
+Generated scenarios are **read-only** — you cannot write a plan into `actuals_py`
+or into a comparison key. Comparison columns are colour-coded
+favourable/unfavourable; the polarity is the metric's `variance_effect` (see the
+[invariants](adding-metrics-and-dimensions.md#invariants) in *Adding metrics &
+dimensions*), not a property of the scenario. Discover the live set with the
+`list_scenarios` tool, or `=PRECIS.SCENARIOS("shifted")` / `("comparisons")` in
+Excel.
 
 ---
 

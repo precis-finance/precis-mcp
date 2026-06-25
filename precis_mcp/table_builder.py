@@ -31,6 +31,8 @@ from __future__ import annotations
 
 from collections import OrderedDict
 
+from precis_mcp.cell_format import excel_number_format, favorability
+
 EM_DASH = "—"
 
 
@@ -74,6 +76,55 @@ def _add_scale_label(result: dict, scale: int) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Excel add-in enrichment
+# ---------------------------------------------------------------------------
+
+
+def _enrich_block_for_excel(block: dict) -> None:
+    """Add resolved Excel ``nf`` per value column + sparse per-row ``alerts``.
+
+    In-place. Lets the Excel add-in build its spill grid and apply formatting
+    without re-implementing the number-format string or the variance sign rule
+    (favorability) client-side — both stay single-sourced in
+    ``precis_mcp.cell_format``. The add-in pivots the existing ``columns`` /
+    ``rows`` into its 2-D spill matrix itself (pure layout, no logic), reading
+    ``nf`` and ``alerts`` for the format pass.
+
+    Off by default (see ``build_financial_table_block(for_excel=…)``) so the
+    high-volume SSE / report paths stay lean; only the MCP render variant — the
+    surface the add-in calls — turns it on. See
+    docs/precis-excel-addin-spec.md §5 (the in-place enrichment supersedes the
+    separate ``grid`` projection the spec originally sketched in §5.1).
+    """
+    columns = block.get("columns", [])
+    value_cols = columns[1:] if columns else []
+    for c in value_cols:
+        c["nf"] = excel_number_format(c.get("format") or "currency", c.get("decimals") or 0)
+    for r in block.get("rows", []):
+        if r.get("row_type") == "separator":
+            continue
+        # Per-row number format: a statement's rows are metrics with their own
+        # format (currency, percent, ratio), authoritative per cell — it overrides
+        # the scenario column's default so a percent line isn't shown as currency.
+        # Metrics-as-columns breakdowns carry no per-row format, so the column nf
+        # still applies there.
+        if r.get("format"):
+            r["nf"] = excel_number_format(r["format"], r.get("decimals") or 0)
+        vals = r.get("values", {})
+        row_effect = r.get("variance_effect", "natural")
+        alerts: dict[str, str] = {}
+        for c in value_cols:
+            if not c.get("variance"):
+                continue
+            effect = c.get("variance_effect") or row_effect
+            fav = favorability(vals.get(c["key"]), effect)
+            if fav is not None:
+                alerts[c["key"]] = fav
+        if alerts:
+            r["alerts"] = alerts
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -81,12 +132,18 @@ def _add_scale_label(result: dict, scale: int) -> None:
 def build_financial_table_block(
     data: dict,
     caption: dict | None = None,
+    for_excel: bool = False,
 ) -> dict | None:
     """Transform a unified engine response into a ``financial_table`` block.
 
     Returns ``None`` if there is nothing to render (no scenarios or no rows).
     The unified ``item`` / ``scenarios`` carry all display fields (format,
     decimals, variance_effect, style, indent), so no catalogue lookup is needed.
+
+    ``for_excel=True`` additionally stamps resolved Excel ``nf`` per value column
+    and sparse per-row ``alerts`` (see :func:`_enrich_block_for_excel`); the MCP
+    render variant the Excel add-in consumes passes it, the SSE / report paths
+    don't.
     """
     if not isinstance(data, dict):
         return None
@@ -108,6 +165,8 @@ def build_financial_table_block(
         block = _build_dimension_table(rows_data, scenarios, dimensions, desc, caption)
 
     _add_scale_label(block, scale)
+    if for_excel:
+        _enrich_block_for_excel(block)
     return block
 
 

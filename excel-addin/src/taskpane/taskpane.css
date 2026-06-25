@@ -1,0 +1,264 @@
+/*
+ * Précis for Excel — task pane styling.
+ * Brand: DM Sans / DM Mono / Cormorant Garamond; ease-in-out motion 100–400ms.
+ * The professional is the protagonist; composed, precise, warm — never frantic.
+ */
+
+/* Self-hosted brand webfonts — same @fontsource faces the SPA and the Keycloak
+ * login theme use, committed under excel-addin/assets/ and copied into the
+ * bundle by webpack. No third-party font CDN, so /excel can keep a tight CSP
+ * (font-src 'self'). taskpane.css is emitted verbatim, so these url()s are
+ * relative to the served stylesheet (…/excel/<hash>.css → …/excel/assets/…). */
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("assets/dm-sans-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("assets/dm-sans-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DM Sans";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("assets/dm-sans-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("assets/cormorant-garamond-latin-500-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Cormorant Garamond";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("assets/cormorant-garamond-latin-600-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DM Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("assets/dm-mono-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "DM Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("assets/dm-mono-latin-500-normal.woff2") format("woff2");
+}
+
+:root {
+  --px-deep-ink: #0C1F2C;
+  --px-night: #132D3E;
+  --px-teal: #0D9488;
+  --px-teal-light: #14B8A6;
+  --px-gold: #C8A97E;
+  --px-paper: #F7F5F0;
+  --px-paper-dark: #EDE8DF;
+  --px-ink: #1A1F2E;
+  --px-ink-muted: #5A6478;
+  --px-ink-faint: #9BA3B5;
+  --px-positive: #2A8F5C;
+  --px-critical: #C4453A;
+  --px-ease: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: var(--px-paper);
+  color: var(--px-ink);
+  font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ---- Header ---- */
+.px-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  background: var(--px-deep-ink);
+}
+
+.px-mark {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+}
+
+.px-wordmark {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 600;
+  font-size: 24px;
+  line-height: 1;
+  color: var(--px-paper);
+}
+
+.px-wordmark span {
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--px-gold);
+  margin-left: 8px;
+}
+
+/* ---- Body ---- */
+.px-main {
+  padding: 20px;
+}
+
+.px-lead {
+  color: var(--px-ink-muted);
+  margin: 0 0 18px;
+}
+
+.px-lead code {
+  font-family: "DM Mono", monospace;
+  font-size: 12.5px;
+  background: var(--px-paper-dark);
+  color: var(--px-ink);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.px-lead a {
+  color: var(--px-teal);
+}
+
+.px-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--px-ink-muted);
+  margin-bottom: 6px;
+}
+
+.px-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 11px;
+  border: 1px solid var(--px-paper-dark);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--px-ink);
+  font-family: inherit;
+  font-size: 14px;
+  transition: border-color 150ms var(--px-ease), box-shadow 150ms var(--px-ease);
+}
+
+.px-input::placeholder {
+  color: var(--px-ink-faint);
+}
+
+.px-input:focus {
+  outline: none;
+  border-color: var(--px-teal);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+}
+
+.px-mono {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+}
+
+/* ---- Buttons ---- */
+.px-btn {
+  display: inline-block;
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 16px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 150ms var(--px-ease), border-color 150ms var(--px-ease), color 150ms var(--px-ease);
+}
+
+.px-btn--primary {
+  background: var(--px-teal);
+  color: #fff;
+}
+
+.px-btn--primary:hover {
+  background: var(--px-teal-light);
+}
+
+.px-btn--ghost {
+  background: transparent;
+  border-color: var(--px-paper-dark);
+  color: var(--px-ink-muted);
+}
+
+.px-btn--ghost:hover {
+  border-color: var(--px-ink-faint);
+  color: var(--px-ink);
+}
+
+/* ---- Connected state ---- */
+.px-connected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--px-positive);
+  margin-bottom: 4px;
+}
+
+.px-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--px-positive);
+  flex: 0 0 auto;
+}
+
+.px-instance {
+  color: var(--px-ink-muted);
+  word-break: break-all;
+  margin-bottom: 16px;
+}
+
+/* ---- Dev fallback + status ---- */
+.px-dev {
+  margin-top: 18px;
+}
+
+.px-dev summary {
+  font-size: 12px;
+  color: var(--px-ink-faint);
+  cursor: pointer;
+}
+
+.px-dev textarea {
+  margin: 8px 0;
+  resize: vertical;
+}
+
+.px-status {
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--px-ink-muted);
+  min-height: 1em;
+}

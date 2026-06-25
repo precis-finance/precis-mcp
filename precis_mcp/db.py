@@ -22,6 +22,28 @@ def _env_truthy(name: str) -> bool:
     return os.getenv(name, '').strip().lower() in ('1', 'true', 'yes')
 
 
+_ch_pool_mgr = None
+
+
+def _clickhouse_pool_manager():
+    """Process-wide urllib3 pool manager with an explicit per-host maxsize.
+
+    clickhouse-connect otherwise shares a default manager whose per-host pool
+    size is incidental, so a query burst can spawn (and discard) connections
+    beyond it. Sizing it deliberately to ``PRECIS_CLICKHOUSE_POOL_MAXSIZE`` —
+    set >= the read-concurrency global cap (``precis_mcp/concurrency.py``) —
+    makes the read-path semaphore the binding limit on a burst, and lets every
+    admitted query reuse a pooled connection instead of churning.
+    """
+    global _ch_pool_mgr
+    if _ch_pool_mgr is None:
+        from clickhouse_connect.driver import httputil
+
+        maxsize = int(os.getenv('PRECIS_CLICKHOUSE_POOL_MAXSIZE', '32'))
+        _ch_pool_mgr = httputil.get_pool_manager(maxsize=maxsize)
+    return _ch_pool_mgr
+
+
 def get_clickhouse_client(**overrides):
     """ClickHouse client — used for metadata, hierarchy lookups, and direct queries.
 
@@ -51,6 +73,9 @@ def get_clickhouse_client(**overrides):
         if verify is not None:
             kwargs['verify'] = _env_truthy('CHVERIFY')
     kwargs.update(overrides)
+    # Share the process-wide pool manager unless a caller pins its own (e.g. a
+    # long-running BACKUP/RESTORE client with a different timeout profile).
+    kwargs.setdefault('pool_mgr', _clickhouse_pool_manager())
     return clickhouse_connect.get_client(**kwargs)
 
 

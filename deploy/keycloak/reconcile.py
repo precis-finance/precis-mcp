@@ -38,6 +38,14 @@ BASE = (os.environ.get("PRECIS_BASE_URL") or "").rstrip("/")
 PUBLIC = (os.environ.get("KC_BASE_URL_PUBLIC") or (f"{BASE}/auth" if BASE else "")).rstrip("/")
 AUD = os.environ.get("KC_MCP_AUDIENCE") or (f"{BASE}/mcp" if BASE else "")
 ORIGIN = PUBLIC[:-5] if PUBLIC.endswith("/auth") else PUBLIC  # SPA origin, no /auth
+EXCEL_ADDIN_ENABLED = os.environ.get("KC_ENABLE_EXCEL_ADDIN", "").strip().lower() in (
+    "1", "true", "yes",
+)
+KC_ADDIN_REDIRECT_URIS = [
+    u.strip()
+    for u in os.environ.get("KC_ADDIN_REDIRECT_URIS", "").split(",")
+    if u.strip()
+]
 
 _token: str | None = None
 
@@ -111,6 +119,52 @@ def main() -> None:
             print(f"precis-spa redirect URIs set to {ORIGIN}/*", flush=True)
         else:
             print("precis-spa client absent — skipping.", flush=True)
+
+    # 2b. Optional Excel add-in public PKCE client. The server-hosted add-in uses
+    #     /excel/auth-callback.html on the Précis origin; absence is enforced so
+    #     the client exists only when the operator enables the surface.
+    addin_clients = _admin("GET", "/clients?clientId=precis-excel-addin") or []
+    addin = addin_clients[0] if addin_clients else None
+    if EXCEL_ADDIN_ENABLED:
+        if not ORIGIN:
+            sys.exit("ERROR: KC_ENABLE_EXCEL_ADDIN=true requires PRECIS_BASE_URL")
+        redirect_uris = KC_ADDIN_REDIRECT_URIS or [f"{ORIGIN}/excel/auth-callback.html"]
+        if addin is None:
+            _admin("POST", "/clients", {
+                "clientId": "precis-excel-addin",
+                "name": "Précis Excel add-in",
+                "protocol": "openid-connect",
+                "publicClient": True,
+                "standardFlowEnabled": True,
+                "directAccessGrantsEnabled": False,
+                "serviceAccountsEnabled": False,
+                "redirectUris": redirect_uris,
+                "webOrigins": [ORIGIN],
+                "attributes": {"pkce.code.challenge.method": "S256"},
+            })
+            addin = (_admin("GET", "/clients?clientId=precis-excel-addin") or [None])[0]
+            print("Created precis-excel-addin public client.", flush=True)
+        if addin:
+            addin.update({
+                "name": "Précis Excel add-in",
+                "protocol": "openid-connect",
+                "publicClient": True,
+                "standardFlowEnabled": True,
+                "directAccessGrantsEnabled": False,
+                "serviceAccountsEnabled": False,
+                "redirectUris": redirect_uris,
+                "webOrigins": [ORIGIN],
+            })
+            addin.setdefault("attributes", {})["pkce.code.challenge.method"] = "S256"
+            _admin("PUT", f"/clients/{addin['id']}", addin)
+            print(
+                "precis-excel-addin redirect URIs set to "
+                + ", ".join(redirect_uris),
+                flush=True,
+            )
+    elif addin is not None:
+        _admin("DELETE", f"/clients/{addin['id']}")
+        print("Deleted disabled precis-excel-addin public client.", flush=True)
 
     # 3. Declare precis_user_id in the user profile (else Keycloak 26 drops it
     #    and /mcp can't resolve the identity claim).

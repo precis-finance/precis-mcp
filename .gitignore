@@ -23,6 +23,11 @@ build/
 dist/
 *.egg-info/
 
+# Excel add-in local build artefacts (the Docker image builds dist/ from source).
+node_modules/
+excel-addin/node_modules/
+excel-addin/dist/
+
 # Test / tool caches
 .pytest_cache/
 .ruff_cache/

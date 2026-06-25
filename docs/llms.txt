@@ -49,6 +49,13 @@ serve an inconsistent model.
 - [Production deployment checklist](deployment/production-checklist/): the
   first-run checklist for a hardened multi-user deployment
 
+## Excel
+
+- [Précis for Excel](excel/): hosted read-only workbook functions served from
+  `/excel`, OAuth client setup, and install steps
+- [Function reference](excel/functions/): every `PRECIS.*` function, arguments,
+  and examples
+
 ## Operations
 
 - [Onboarding a data source](operations/onboarding-ingestion/): the

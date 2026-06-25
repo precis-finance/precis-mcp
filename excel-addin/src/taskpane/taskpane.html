@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Précis for Excel</title>
+
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body>
+    <header class="px-header">
+        <img class="px-mark" src="../../assets/precis-mark-light.svg" alt="Précis" />
+        <div class="px-wordmark">Précis<span> for Excel</span></div>
+    </header>
+
+    <section id="sideload-msg" class="px-main">
+        <p class="px-lead">Please
+            <a target="_blank" href="https://learn.microsoft.com/office/dev/add-ins/testing/test-debug-office-add-ins#sideload-an-office-add-in-for-testing">sideload</a>
+            the add-in to begin.</p>
+    </section>
+
+    <main id="app-body" class="px-main" style="display: none;">
+        <!-- Disconnected: connection parameters + sign-in -->
+        <section id="disconnected">
+            <p class="px-lead">Sign in to your Précis instance, then use
+                <code>=PRECIS.STATEMENT(…)</code> in any cell.</p>
+
+            <button id="signin" class="px-btn px-btn--primary" type="button">Sign in</button>
+        </section>
+
+        <!-- Connected: status + disconnect -->
+        <section id="connected" style="display: none;">
+            <div class="px-connected">
+                <span class="px-dot"></span>
+                <span>Connected</span>
+            </div>
+            <div id="connected-user" class="px-instance"></div>
+            <div id="connected-url" class="px-instance px-mono"></div>
+
+            <p class="px-lead">Use <code>=PRECIS.STATEMENT(…)</code> and <code>=PRECIS.METRIC(…)</code>
+                in any cell. To style a spilled table, select it and click
+                <strong>Apply Précis formatting</strong> on the Home ribbon.</p>
+
+            <button id="refresh" class="px-btn px-btn--primary" type="button">Refresh data</button>
+            <button id="disconnect" class="px-btn px-btn--ghost" type="button">Disconnect</button>
+        </section>
+
+        <p id="status" class="px-status"></p>
+    </main>
+</body>
+
+</html>

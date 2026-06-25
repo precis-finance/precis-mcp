@@ -144,3 +144,59 @@ class TestSingleMetricUnchanged:
         row = block["rows"][0]
         assert row["format"] == "currency"
         assert row["decimals"] == 0
+
+
+# ---------------------------------------------------------------------------
+# for_excel=True — resolved `nf` per value column + sparse per-row `alerts`
+# (the add-in enrichment, docs/precis-excel-addin-spec.md §5)
+# ---------------------------------------------------------------------------
+
+class TestForExcelEnrichment:
+    def _data(self):
+        # aggregate (no dimensions): Actuals + a Variance column.
+        scen = [{"alias": "Actuals"}, {"alias": "Variance", "variance": True}]
+        rows = [
+            _row("detail", {},
+                 _item("rev", "Revenue", "currency", 0, ve="natural"),
+                 {"Actuals": 100.0, "Variance": 10.0}),
+            _row("detail", {},
+                 _item("cost", "Direct Cost", "currency", 0, ve="inverse"),
+                 {"Actuals": 60.0, "Variance": 5.0}),
+            _row("detail", {},
+                 _item("mgn", "Margin %", "percent", 1, ve="natural"),
+                 {"Actuals": 40.0, "Variance": -2.0}),
+        ]
+        return _result(scen, [], rows)
+
+    def test_off_by_default(self):
+        block = _block(self._data())
+        assert all("nf" not in c for c in block["columns"])
+        assert all("alerts" not in r for r in block["rows"])
+
+    def test_nf_on_value_columns_only(self):
+        block = build_financial_table_block(self._data(), for_excel=True)
+        assert "nf" not in block["columns"][0]  # the label column
+        for c in block["columns"][1:]:
+            assert c["nf"]  # resolved Excel number-format string
+
+    def test_percent_column_gets_percent_format(self):
+        # The Margin % row's metric format is percent → its cells are percent,
+        # but in the aggregate layout format lives on the row, so assert the row.
+        block = build_financial_table_block(self._data(), for_excel=True)
+        margin = next(r for r in block["rows"] if r.get("label") == "Margin %")
+        assert margin["format"] == "percent"
+
+    def test_alerts_resolved_per_cell(self):
+        block = build_financial_table_block(self._data(), for_excel=True)
+        by_label = {r["label"]: r for r in block["rows"] if "label" in r}
+        # Revenue variance +10, natural → favorable
+        assert by_label["Revenue"]["alerts"]["Variance"] == "favorable"
+        # Direct Cost variance +5, inverse → unfavorable
+        assert by_label["Direct Cost"]["alerts"]["Variance"] == "unfavorable"
+        # Margin variance -2, natural → unfavorable
+        assert by_label["Margin %"]["alerts"]["Variance"] == "unfavorable"
+
+    def test_non_variance_columns_never_alert(self):
+        block = build_financial_table_block(self._data(), for_excel=True)
+        for r in block["rows"]:
+            assert "Actuals" not in r.get("alerts", {})

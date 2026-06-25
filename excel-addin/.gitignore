@@ -1,0 +1,13 @@
+# Node / build
+node_modules/
+dist/
+*.log
+npm-debug.log*
+
+# office-addin-dev-certs output (never commit local TLS material)
+*.crt
+*.key
+.office-addin-dev-certs/
+
+# OS
+.DS_Store

@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="TaskPaneApp">
+  <Id>32193ff7-6402-4d46-877d-0d12422fe019</Id>
+  <Version>1.0.0.3</Version>
+  <ProviderName>Précis</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="Précis for Excel" />
+  <Description DefaultValue="Live Précis financial statements and metrics as Excel functions." />
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png"/>
+  <SupportUrl DefaultValue="https://precis.finance/help"/>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="SharedRuntime" MinVersion="1.1"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Hosts>
+      <Host xsi:type="Workbook">
+        <Runtimes>
+          <Runtime resid="Taskpane.Url" lifetime="long" />
+        </Runtimes>
+        <AllFormFactors>
+          <ExtensionPoint xsi:type="CustomFunctions">
+            <Script>
+              <SourceLocation resid="Functions.Script.Url" />
+            </Script>
+            <Page>
+              <SourceLocation resid="Taskpane.Url"/>
+            </Page>
+            <Metadata>
+              <SourceLocation resid="Functions.Metadata.Url" />
+            </Metadata>
+            <Namespace resid="Functions.Namespace" />
+          </ExtensionPoint>
+        </AllFormFactors>
+        <DesktopFormFactor>
+          <GetStarted>
+            <Title resid="GetStarted.Title"/>
+            <Description resid="GetStarted.Description"/>
+            <LearnMoreUrl resid="GetStarted.LearnMoreUrl"/>
+          </GetStarted>
+          <FunctionFile resid="Taskpane.Url"/>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="CommandsGroup">
+                <Label resid="CommandsGroup.Label" />
+                <Icon>
+                  <bt:Image size="16" resid="Icon.16x16" />
+                  <bt:Image size="32" resid="Icon.32x32" />
+                  <bt:Image size="80" resid="Icon.80x80" />
+                </Icon>
+                <Control xsi:type="Button" id="TaskpaneButton">
+                  <Label resid="TaskpaneButton.Label" />
+                  <Supertip>
+                    <Title resid="TaskpaneButton.Label" />
+                    <Description resid="TaskpaneButton.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Icon.16x16" />
+                    <bt:Image size="32" resid="Icon.32x32" />
+                    <bt:Image size="80" resid="Icon.80x80" />
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>ButtonId1</TaskpaneId>
+                    <SourceLocation resid="Taskpane.Url" />
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="FormatButton">
+                  <Label resid="FormatButton.Label" />
+                  <Supertip>
+                    <Title resid="FormatButton.Label" />
+                    <Description resid="FormatButton.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Format.Icon.16" />
+                    <bt:Image size="32" resid="Format.Icon.32" />
+                    <bt:Image size="80" resid="Format.Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>applyPrecisFormatting</FunctionName>
+                  </Action>
+                </Control>
+                <Control xsi:type="Button" id="RefreshButton">
+                  <Label resid="RefreshButton.Label" />
+                  <Supertip>
+                    <Title resid="RefreshButton.Label" />
+                    <Description resid="RefreshButton.Tooltip" />
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="Refresh.Icon.16" />
+                    <bt:Image size="32" resid="Refresh.Icon.32" />
+                    <bt:Image size="80" resid="Refresh.Icon.80" />
+                  </Icon>
+                  <Action xsi:type="ExecuteFunction">
+                    <FunctionName>refreshPrecisData</FunctionName>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3000/assets/icon-16.png"/>
+        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3000/assets/icon-32.png"/>
+        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3000/assets/icon-80.png"/>
+        <bt:Image id="Format.Icon.16" DefaultValue="https://localhost:3000/assets/format-16.png"/>
+        <bt:Image id="Format.Icon.32" DefaultValue="https://localhost:3000/assets/format-32.png"/>
+        <bt:Image id="Format.Icon.80" DefaultValue="https://localhost:3000/assets/format-80.png"/>
+        <bt:Image id="Refresh.Icon.16" DefaultValue="https://localhost:3000/assets/refresh-16.png"/>
+        <bt:Image id="Refresh.Icon.32" DefaultValue="https://localhost:3000/assets/refresh-32.png"/>
+        <bt:Image id="Refresh.Icon.80" DefaultValue="https://localhost:3000/assets/refresh-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="Functions.Script.Url" DefaultValue="https://localhost:3000/functions.js" />
+        <bt:Url id="Functions.Metadata.Url" DefaultValue="https://localhost:3000/functions.json" />
+        <bt:Url id="GetStarted.LearnMoreUrl" DefaultValue="https://go.microsoft.com/fwlink/?LinkId=276812" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3000/taskpane.html"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="Functions.Namespace" DefaultValue="PRECIS" />
+        <bt:String id="GetStarted.Title" DefaultValue="Get started with Précis for Excel" />
+        <bt:String id="CommandsGroup.Label" DefaultValue="Précis" />
+        <bt:String id="TaskpaneButton.Label" DefaultValue="Panel" />
+        <bt:String id="FormatButton.Label" DefaultValue="Format" />
+        <bt:String id="RefreshButton.Label" DefaultValue="Refresh" />
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="GetStarted.Description" DefaultValue="Your sample add-in loaded successfully. Go to the HOME tab and click the 'Show Task Pane' button to get started." />
+        <bt:String id="TaskpaneButton.Tooltip" DefaultValue="Open the Précis panel — connect, refresh, sign out." />
+        <bt:String id="FormatButton.Tooltip" DefaultValue="Style the selected spill — variance colours, subtotals, totals, number formats." />
+        <bt:String id="RefreshButton.Tooltip" DefaultValue="Re-fetch the latest figures for every Précis cell in the workbook." />
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

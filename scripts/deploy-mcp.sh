@@ -268,6 +268,15 @@ ssh "$SERVER" "
             echo 'OIDC_CLIENT_SECRET='
             echo 'PRECIS_IDENTITY_CLAIM='
             echo 'PRECIS_IDENTITY_COLUMN='
+            echo '# Excel add-in (optional): the image bakes the hosted bundle at /excel.'
+            echo '# Mode B: set true to provision the bundled-Keycloak public PKCE client.'
+            echo 'KC_ENABLE_EXCEL_ADDIN='
+            echo '# Optional override; defaults to \${PRECIS_BASE_URL}/excel/auth-callback.html'
+            echo 'KC_ADDIN_REDIRECT_URIS='
+            echo '# Mode C: register a public PKCE client in your IdP and advertise it here.'
+            echo 'EXCEL_ADDIN_CLIENT_ID='
+            echo 'EXCEL_ADDIN_SCOPE='
+            echo 'EXCEL_ADDIN_RESOURCE_INDICATOR='
             echo \"# REQUIRED before the Keycloak/server phase — set to your public origin:\"
             echo \"PRECIS_BASE_URL=\"
             echo '# Bare hostname for the bundled Caddy proxy (the host part of'

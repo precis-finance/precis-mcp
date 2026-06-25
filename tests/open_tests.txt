@@ -28,7 +28,7 @@
 # tests/fakes/fake_llm.py is NOT carried — no open test uses it (it is the
 # LangGraph chat-model fake, purely commercial).
 
-# --- unit (40) ---
+# --- unit (41) ---
 unit/test_admin_ops.py
 unit/test_auth.py
 unit/test_auth_mode.py
@@ -38,6 +38,7 @@ unit/test_backup_manifest.py
 unit/test_backup_prune.py
 unit/test_catalogue.py
 unit/test_catalogue_ref.py
+unit/test_cell_format.py
 unit/test_clickhouse_init.py
 unit/test_context_validation.py
 unit/test_engine_catalogue.py

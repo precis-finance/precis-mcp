@@ -44,6 +44,9 @@ identity, and the MCP transport — and depends on nothing outside it.
   [data modes](docs/deployment/clickhouse-data-modes.md).
 - **An MCP-capable client** — Claude (claude.ai and Desktop connectors, against
   a deployed instance), Claude Code, ChatGPT, or any MCP client.
+- **Optional Excel access** — the multi-user image also hosts the Précis Excel
+  add-in at `/excel`; enable its OAuth client when you want live read-only
+  workbook functions.
 
 ## What precis-mcp looks like
 
@@ -105,6 +108,10 @@ along independent axes:
   (Postgres dump + ClickHouse backup + instance config) to a local volume or
   S3, with restore and drill commands:
   [docs/operations/backups.md](docs/operations/backups.md)
+- **Excel add-in** — optional hosted workbook functions served from the same
+  instance at `/excel`; enable with the bundled Keycloak client or a public
+  client in your external IdP:
+  [docs/excel/](docs/excel/index.md)
 
 `scripts/deploy-mcp.sh --data-mode ... --auth-mode ...` is the friendly front
 door over the Compose profiles. Every knob is an environment variable:
@@ -149,6 +156,7 @@ Full documentation: [docs.precis.finance](https://docs.precis.finance/).
 |---|---|
 | Getting started | [quickstart](docs/getting-started/quickstart.md) |
 | Deployment | [ClickHouse data modes](docs/deployment/clickhouse-data-modes.md) · [OAuth / Keycloak](docs/deployment/oauth-keycloak.md) · [external IdP recipes](docs/deployment/external-idp-recipes.md) |
+| Excel | [Précis for Excel](docs/excel/index.md) · [function reference](docs/excel/functions.md) |
 | Configuration | [catalogue & semantic layer](docs/configuration/catalogue-and-semantic.md) · [ingestion](docs/configuration/ingestion.md) · [environment variables](docs/configuration/environment-variables.md) |
 | Operations | [onboarding & ingestion](docs/operations/onboarding-ingestion.md) · [backups](docs/operations/backups.md) |
 | Development | [adding read tools](docs/development/adding-read-tools.md) |
@@ -167,15 +175,15 @@ prepares; the finance professional decides.
 
 **Ships in precis-mcp (Elastic License 2.0):** the MCP server and transport ·
 metric engine · financial-statement layouts · semantic SQL view pattern · YAML
-metric catalogue · sample finance model · ingestion path · ClickHouse analytical
-store · PostgreSQL platform state · local dev-key mode · multi-user OAuth 2.1
-mode · Docker Compose deployment · backup & restore profile · configuration and
-deployment docs.
+metric catalogue · sample finance model · ingestion path · hosted read-only
+Excel add-in · ClickHouse analytical store · PostgreSQL platform state · local
+dev-key mode · multi-user OAuth 2.1 mode · Docker Compose deployment · backup &
+restore profile · configuration and deployment docs.
 
 **Lives in Précis, not in this repo:** the workspace UI · the conversational
 agent · plan write-back · scenario commit workflows · scheduled Dispatch
-briefings · report / management-pack workflow · Excel round-trip · commercial
-support (unless separately agreed).
+briefings · report / management-pack workflow · Excel write-back / round-trip ·
+commercial support (unless separately agreed).
 
 **Talk about Précis** — the full platform and design-partner programme:
 [precis.finance](https://precis.finance) or
