@@ -1,18 +1,22 @@
 # SPDX-License-Identifier: Elastic-2.0
 # Copyright (c) 2026 Sergio Naval Marimont
-"""OAuth-proxy shim for claude.ai's remote-MCP connector.
+"""OAuth-proxy shim — compatibility fallback for claude.ai's remote-MCP connector.
 
-claude.ai's OAuth client predates RFC 9728.  It ignores the
-``authorization_servers`` pointer in our protected-resource metadata and
-instead constructs ``/authorize``, ``/token``, ``/register`` and the AS
-metadata document relative to the MCP server's own origin
-(anthropics/claude-ai-mcp#82, closed "not planned").  This router hosts those
-endpoints at the origin and forwards them to Keycloak, so claude.ai can
-complete the flow.
+Historically claude.ai's connector implemented the MCP 2025-03-26 spec: it
+ignored the ``authorization_servers`` pointer in our protected-resource metadata
+and constructed ``/authorize``, ``/token``, ``/register`` and the AS metadata
+document relative to the MCP server's own origin (anthropics/claude-ai-mcp#82,
+closed "not planned"). This router hosts those endpoints at the origin and
+forwards them to Keycloak so that legacy path can still complete.
 
-Modern clients (ChatGPT, Claude Code) implement the current spec: they read
-``/.well-known/oauth-protected-resource`` (discovery.py), follow it to the
-Keycloak issuer, and talk to Keycloak directly — they never touch this shim.
+That origin-relative path only engages when the ``401`` omits the
+``WWW-Authenticate: Bearer resource_metadata="…"`` header. Because we always send
+that header, an up-to-date client — claude.ai, ChatGPT, Claude Code — instead
+reads ``/.well-known/oauth-protected-resource`` (discovery.py), follows it to the
+Keycloak issuer, and talks to Keycloak directly, never touching this shim. The
+shim is therefore a compatibility fallback rather than the primary path, kept
+because a client's discovery behaviour is version- and configuration-dependent
+and the shim is transparent (mints no tokens, holds no secrets) and cheap.
 
 The proxy is transparent: it mints no tokens, holds no secrets, adds no
 policy.  ``/register`` and ``/token`` are forwarded to Keycloak
@@ -88,7 +92,13 @@ async def authorization_server_metadata(request: Request) -> dict:
         "token_endpoint_auth_methods_supported": [
             "none", "client_secret_post", "client_secret_basic",
         ],
-        "scopes_supported": ["openid", "profile", "email"],
+        # No `scopes_supported`: advertising a scope set drives a client to request
+        # exactly those scopes at dynamic registration, and Keycloak then derives
+        # the client's scope set from the request — dropping the realm-default
+        # `precis-mcp` audience scope, so the token loses its `/mcp` audience and
+        # 401s. Omitting it lets the legacy-path client register with no scopes and
+        # inherit the realm defaults (incl. the audience scope), mirroring the
+        # modern path. Same reasoning as the protected-resource doc (discovery.py).
     }
 
 

@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-06-18"
 SERVER_NAME = "precis"
-SERVER_VERSION = "0.2.1"
+SERVER_VERSION = "0.2.2"
 
 # Synthetic, MCP-only tool whose *result* is the orientation block. The MCP
 # `instructions` field (initialize) is dropped by claude.ai and only partly read
@@ -254,6 +254,19 @@ def _check_mcp_audience(claims: dict) -> None:
     aud = claims.get("aud")
     aud_list = [aud] if isinstance(aud, str) else (aud or [])
     if expected not in aud_list:
+        # Don't fail silently. A token that verified (valid signature + issuer)
+        # but lacks our /mcp audience almost always means Keycloak is stamping a
+        # stale audience after a PRECIS_BASE_URL change, or a self-registered
+        # (DCR) client — e.g. claude.ai — never received the precis-mcp scope.
+        # Surface the actionable cause; reads only the token's own claims, so no
+        # admin credential is involved.
+        logger.warning(
+            "MCP audience mismatch: token aud=%s, expected %r. If PRECIS_BASE_URL "
+            "changed or a new connector self-registered, re-run the Keycloak realm "
+            "reconcile (the keycloak-realm-apply one-shot) to restamp the audience "
+            "mapper and re-promote the precis-mcp default client scope.",
+            aud_list, expected,
+        )
         raise _AuthRejected(
             401, f"Token audience does not include {expected!r}"
         )

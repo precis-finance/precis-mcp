@@ -9,6 +9,33 @@ my client integration?"*
      ritual (scripts/publish_open.py); move them under a dated heading when
      the sync is pushed to the mirror. -->
 
+## [0.2.2] - 2026-06-25
+
+A fix release on top of 0.2.1. The headline fix: enabling the Excel add-in no
+longer breaks other MCP clients' authentication. No breaking changes — the
+`/mcp` tools and their responses are unchanged.
+
+### Fixed
+
+- **Enabling the Excel add-in no longer breaks other MCP clients.** With
+  `KC_ENABLE_EXCEL_ADDIN=true`, the add-in's requested scope set was advertised in
+  the standard RFC 9728 `scopes_supported` field of the shared
+  `/.well-known/oauth-protected-resource` document — which every MCP client reads.
+  A generic client then requested that scope at dynamic client registration, and
+  Keycloak derived the new client's scope set from the request, dropping the
+  realm-default audience scope; the client's tokens lost the `/mcp` audience and
+  every call returned 401. The hint now lives under a namespaced
+  `precis_excel_scopes` key, so the shared document is identical whether or not
+  the add-in is enabled. If you integrate the add-in against an external IdP, it
+  reads `precis_excel_scopes` (previously `scopes_supported`); the
+  `EXCEL_ADDIN_SCOPE` / `EXCEL_ADDIN_RESOURCE_INDICATOR` knobs are unchanged.
+- **The Keycloak realm reconcile runs on every mode-B deploy.** `deploy-mcp.sh`
+  now re-applies the realm reconcile on each deploy, not only when Compose
+  recreates the one-shot — so a `PRECIS_BASE_URL` / domain change always restamps
+  the `/mcp` audience mapper, redirect URIs, and web origins. The server also logs
+  a warning when an incoming token's audience does not match the expected `/mcp`
+  value, surfacing audience drift before it turns into a silent 401.
+
 ## [0.2.1] - 2026-06-25
 
 A fix release on top of 0.2.0: the published image now serves the MCP widgets,

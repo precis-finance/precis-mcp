@@ -443,6 +443,18 @@ ssh "$SERVER" "
     # (so a stale locally-built image of the same tag can't shadow the release)
     # and bring the stack up without building.
     $($DO_BUILD && echo "${COMPOSE} up -d --build" || echo "${COMPOSE} pull precis-mcp && ${COMPOSE} up -d")
+    # Reconcile is idempotent realm-state convergence — run it unconditionally on
+    # every deploy, not only when compose happens to recreate the one-shot. It is
+    # the single thing that restamps the /mcp audience mapper, redirect URIs, and
+    # web origins, and re-promotes the precis-mcp default client scope, after a
+    # PRECIS_BASE_URL change. Without it a domain switch leaves Keycloak stamping
+    # the old audience (and self-registered DCR clients without the audience
+    # scope), so tokens verify but /mcp rejects them. Mode B only — mode C
+    # (external OIDC) has no bundled Keycloak to reconcile.
+    if [ '${AUTH_MODE}' = 'keycloak' ]; then
+        echo '  reconciling Keycloak realm (idempotent) ...'
+        ${COMPOSE} run --rm keycloak-realm-apply
+    fi
     ${COMPOSE} ps
 "
 echo ""

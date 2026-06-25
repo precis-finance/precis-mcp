@@ -101,12 +101,22 @@ async def oauth_protected_resource(request: Request) -> dict:
     excel_client_id = _excel_addin_client_id()
     if excel_client_id:
         meta["precis_excel_client_id"] = excel_client_id
-        # How the add-in should request a token for this resource, so it stays
-        # generic across IdPs. `scopes_supported` is the standard RFC 9728 field;
-        # `precis_resource_indicator` is a Précis extension flagging whether the AS
-        # honours the RFC 8707 `resource` parameter. Defaults preserve the
-        # Keycloak/Auth0/Ping shape (scope=openid + resource indicator); Entra/Okta
-        # advertise a request scope and turn the resource indicator off.
-        meta["scopes_supported"] = _excel_addin_scopes()
+        # How the add-in should request a token for this resource — both keys are
+        # Précis-namespaced, deliberately NOT the standard RFC 9728
+        # `scopes_supported`. That standard field is read by *every* MCP client
+        # (claude.ai included), and a value there drives generic clients to request
+        # exactly those scopes at dynamic registration. Keycloak then derives the
+        # registered client's scope set from the request and drops the realm-default
+        # `precis-mcp` audience scope, so those clients' tokens lose the `/mcp`
+        # audience and the server 401s every call. Keeping the add-in's hint under
+        # `precis_excel_*` leaves the shared protected-resource document identical
+        # whether or not the add-in is enabled, so enabling the add-in can never
+        # break another client's auth.
+        # `precis_excel_scopes` is the exact scope set the add-in requests;
+        # `precis_resource_parameter_supported` flags whether the AS honours the
+        # RFC 8707 `resource` parameter. Defaults preserve the Keycloak/Auth0/Ping
+        # shape (scope=openid + resource indicator); Entra/Okta advertise a request
+        # scope and turn the resource indicator off.
+        meta["precis_excel_scopes"] = _excel_addin_scopes()
         meta["precis_resource_parameter_supported"] = _resource_parameter_supported()
     return meta

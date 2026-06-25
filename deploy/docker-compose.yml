@@ -125,7 +125,7 @@ x-precis-env: &precis-env
 # release — bump it with each release, or override to a digest for re-pull
 # immutability matching the upstream-image policy below.
 x-precis-image: &precis-image
-  image: ghcr.io/precis-finance/precis-mcp:${PRECIS_MCP_TAG:-0.2.1}
+  image: ghcr.io/precis-finance/precis-mcp:${PRECIS_MCP_TAG:-0.2.2}
   build:
     context: ..
     dockerfile: Dockerfile

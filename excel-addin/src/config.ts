@@ -23,8 +23,8 @@ interface PrecisGlobal {
   clientId?: string;
   // Token-request shape, discovered from the /mcp host's protected-resource
   // metadata so the add-in stays IdP-agnostic: `scopes` is the exact scope set to
-  // request (RFC 9728 `scopes_supported`, default ["openid"]); `resourceParam`
-  // is whether the AS honours the RFC 8707 `resource` parameter (default true —
+  // request (the Précis-namespaced `precis_excel_scopes`, default ["openid"]);
+  // `resourceParam` is whether the AS honours the RFC 8707 `resource` parameter (default true —
   // the MCP-conformant shape; false for Entra/Okta, which bind the audience via
   // the request scope instead).
   scopes?: string[];

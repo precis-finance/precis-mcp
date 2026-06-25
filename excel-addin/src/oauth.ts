@@ -115,14 +115,18 @@ export async function discoverConfig(mcpUrl: string): Promise<void> {
     throw new Error("OpenID configuration is missing endpoints");
   }
   // Token-request shape, server-advertised so the add-in stays IdP-agnostic:
-  //   scopes_supported (RFC 9728)         → the exact scope set to request
+  //   precis_excel_scopes                 → the exact scope set to request
   //   precis_resource_parameter_supported → whether to send RFC 8707 `resource`
-  // Defaults preserve the MCP-conformant Keycloak shape (scope=openid + resource).
-  // We request exactly the advertised scopes — no client-side composition — so the
+  // Both are Précis-namespaced (NOT the standard RFC 9728 `scopes_supported`), so
+  // enabling the add-in leaves the shared protected-resource doc identical for
+  // other MCP clients (e.g. claude.ai) — a value in the standard field would drive
+  // them to request it at registration and drop the audience scope. Defaults
+  // preserve the MCP-conformant Keycloak shape (scope=openid + resource). We
+  // request exactly the advertised scopes — no client-side composition — so the
   // operator controls the scope per IdP (and we never silently add `offline_access`,
   // which on Keycloak would upgrade the refresh token to a long-lived offline token).
-  const scopesSupported = Array.isArray(pr.scopes_supported)
-    ? (pr.scopes_supported as unknown[]).map(String).filter(Boolean)
+  const scopesSupported = Array.isArray(pr.precis_excel_scopes)
+    ? (pr.precis_excel_scopes as unknown[]).map(String).filter(Boolean)
     : [];
   setOidcConfig(mcpUrl, {
     authorizationEndpoint: String(oidc.authorization_endpoint),
